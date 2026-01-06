@@ -1,46 +1,71 @@
 const express = require("express");
 const http = require("http");
 const cors = require("cors");
+const path = require("path");
+const { Server } = require("socket.io");
+
 const pool = require("./db");
+const authMiddleware = require("./middleware/auth");
+const authRoutes = require("./routes/auth");
+
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const app = express();
 const server = http.createServer(app);
-
-const io = require("socket.io")(server, {
+const io = new Server(server, {
   cors: { origin: "*" }
 });
-const path = require("path");
 
-// ✅ Serve frontend folder
-app.use(express.static(path.join(__dirname, "../frontend")));
+const PORT = process.env.PORT || 3000;
 
-// ✅ Default route → menu.html
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "../frontend/menu.html"));
-});
-
-
+// ==============================
+// MIDDLEWARE
+// ==============================
 app.use(cors());
 app.use(express.json());
 
-/* -------- MENU -------- */
-app.post("/menu", async (req, res) => {
-  const { name, price } = req.body;
-  await pool.query(
-    "INSERT INTO menu_items(name, price) VALUES($1,$2)",
-    [name, price]
+// ==============================
+// STATIC FRONTEND
+// ==============================
+app.use(express.static(path.join(__dirname, "../frontend")));
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "../frontend/login.html"));
+});
+
+// ==============================
+// AUTH ROUTES
+// ==============================
+app.use("/auth", authRoutes);
+
+// ==============================
+// MENU ROUTES
+// ==============================
+app.get("/menu", async (req, res) => {
+  const result = await pool.query(
+    "SELECT * FROM menu_items WHERE is_available=true ORDER BY category"
   );
-  res.json({ message: "Menu added" });
+  res.json(result.rows);
 });
 
-app.get("https://bindaas-bites.onrender.com/menu", async (req, res) => {
-  const data = await pool.query("SELECT * FROM menu_items WHERE is_available=true");
-  res.json(data.rows);
+// (Optional admin menu add)
+app.post("/menu", authMiddleware, async (req, res) => {
+  const { name, price, category } = req.body;
+
+  await pool.query(
+    "INSERT INTO menu_items(name, price, category) VALUES($1,$2,$3)",
+    [name, price, category]
+  );
+
+  res.json({ message: "Menu item added" });
 });
 
-/* -------- ORDER -------- */
-app.post("/order", async (req, res) => {
+// ==============================
+// ORDER ROUTES (PROTECTED)
+// ==============================
+app.post("/order", authMiddleware, async (req, res) => {
   const { items } = req.body;
+  const { userId, name } = req.user;
 
   if (!items || items.length === 0) {
     return res.status(400).json({ message: "No items in order" });
@@ -49,7 +74,6 @@ app.post("/order", async (req, res) => {
   try {
     let total = 0;
 
-    // calculate total from DB prices (SECURE)
     for (let i of items) {
       const priceRes = await pool.query(
         "SELECT price FROM menu_items WHERE id=$1",
@@ -58,15 +82,13 @@ app.post("/order", async (req, res) => {
       total += priceRes.rows[0].price * i.qty;
     }
 
-    // 1️⃣ create order
     const orderRes = await pool.query(
-      "INSERT INTO orders(total_amount) VALUES($1) RETURNING id, order_at",
-      [total]
+      "INSERT INTO orders(total_amount, user_id, user_name) VALUES($1,$2,$3) RETURNING id, order_at",
+      [total, userId, name]
     );
 
     const orderId = orderRes.rows[0].id;
 
-    // 2️⃣ insert order items
     for (let i of items) {
       await pool.query(
         "INSERT INTO order_items(order_id, menu_item_id, quantity) VALUES($1,$2,$3)",
@@ -74,7 +96,6 @@ app.post("/order", async (req, res) => {
       );
     }
 
-    // notify chef (real-time)
     io.emit("new-order", orderId);
 
     res.json({
@@ -82,16 +103,16 @@ app.post("/order", async (req, res) => {
       orderId,
       orderTime: orderRes.rows[0].order_at
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Order failed" });
   }
 });
 
-
-/* -------- CHEF -------- */
-app.get("/orders", async (req, res) => {
+// ==============================
+// CHEF ROUTES (PROTECTED)
+// ==============================
+app.get("/orders", authMiddleware, async (req, res) => {
   const result = await pool.query(`
     SELECT
       o.id,
@@ -109,8 +130,7 @@ app.get("/orders", async (req, res) => {
   res.json(result.rows);
 });
 
-
-app.put("/order/:id/deliver", async (req, res) => {
+app.put("/order/:id/deliver", authMiddleware, async (req, res) => {
   await pool.query(
     "UPDATE orders SET status='DELIVERED' WHERE id=$1",
     [req.params.id]
@@ -118,49 +138,48 @@ app.put("/order/:id/deliver", async (req, res) => {
   res.json({ message: "Order delivered" });
 });
 
+// ==============================
+// ORDER HISTORY
+// ==============================
+app.get("/orders/history", authMiddleware, async (req, res) => {
+  const result = await pool.query(`
+    SELECT
+      o.id AS order_id,
+      o.status,
+      o.total_amount,
+      o.user_name,
+      TO_CHAR(o.order_at, 'DD Mon YYYY') AS order_date,
+      TO_CHAR(o.order_at, 'HH12:MI AM') AS order_time,
+      m.name AS item_name,
+      oi.quantity
+    FROM orders o
+    JOIN order_items oi ON o.id = oi.order_id
+    JOIN menu_items m ON m.id = oi.menu_item_id
+    ORDER BY o.id DESC
+  `);
+
+  res.json(result.rows);
+});
+
+// ==============================
+// DB CHECK
+// ==============================
 async function checkDB() {
   try {
-    const res = await pool.query("SELECT 1");
+    await pool.query("SELECT 1");
     console.log("✅ Database connected successfully");
   } catch (err) {
     console.error("❌ Database connection failed");
     console.error(err.message);
-    process.exit(1); // stop server if DB not connected
+    process.exit(1);
   }
 }
-app.get("/menu", async (req, res) => {
-  const result = await pool.query(
-    "SELECT * FROM menu_items WHERE is_available=true ORDER BY category"
-  );
-  res.json(result.rows);
-});
-
-app.get("/orders/history", async (req, res) => {
-  try {
-    const result = await pool.query(`
-      SELECT
-        o.id AS order_id,
-        o.status,
-        o.total_amount,
-        TO_CHAR(o.order_at, 'DD Mon YYYY') AS order_date,
-        TO_CHAR(o.order_at, 'HH12:MI AM') AS order_time,
-        m.name AS item_name,
-        oi.quantity
-      FROM orders o
-      JOIN order_items oi ON o.id = oi.order_id
-      JOIN menu_items m ON m.id = oi.menu_item_id
-      ORDER BY o.id DESC
-    `);
-
-    res.json(result.rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to fetch orders" });
-  }
-});
-
 
 checkDB();
-server.listen(3000, () => {
-  console.log("Server running on http://localhost:3000");
+
+// ==============================
+// START SERVER
+// ==============================
+server.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });
