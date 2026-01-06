@@ -33,7 +33,7 @@ app.post("/menu", async (req, res) => {
   res.json({ message: "Menu added" });
 });
 
-app.get("/menu", async (req, res) => {
+app.get("https://bindaas-bites.onrender.com/menu", async (req, res) => {
   const data = await pool.query("SELECT * FROM menu_items WHERE is_available=true");
   res.json(data.rows);
 });
