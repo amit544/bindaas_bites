@@ -8,7 +8,7 @@ let total = 0;
 // ==============================
 // LOAD MENU
 // ==============================
-fetch("http://localhost:3000/menu")
+fetch("/menu")
   .then(res => res.json())
   .then(data => {
     menuData = data;
@@ -127,7 +127,7 @@ function placeOrder() {
     return;
   }
 
-  fetch("http://localhost:3000/order", {
+  fetch("/order", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ items })
