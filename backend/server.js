@@ -9,8 +9,6 @@ const server = http.createServer(app);
 const io = require("socket.io")(server, {
   cors: { origin: "*" }
 });
-
-const express = require("express");
 const path = require("path");
 
 // ✅ Serve frontend folder
