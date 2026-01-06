@@ -10,6 +10,18 @@ const io = require("socket.io")(server, {
   cors: { origin: "*" }
 });
 
+const express = require("express");
+const path = require("path");
+
+// ✅ Serve frontend folder
+app.use(express.static(path.join(__dirname, "../frontend")));
+
+// ✅ Default route → menu.html
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "../frontend/menu.html"));
+});
+
+
 app.use(cors());
 app.use(express.json());
 

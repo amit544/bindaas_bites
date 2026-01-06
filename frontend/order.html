@@ -31,12 +31,12 @@
 
 <div class="container my-4">
   <h2 class="text-center mb-4">📦 Order Details</h2>
-
   <div id="orders"></div>
 </div>
 
 <script>
-fetch("http://localhost:3000/orders/history")
+/* ✅ SAME DOMAIN API CALL */
+fetch("/orders/history")
   .then(res => res.json())
   .then(data => {
     const ordersDiv = document.getElementById("orders");
@@ -66,7 +66,9 @@ fetch("http://localhost:3000/orders/history")
         <div class="card order-card p-3 mb-4">
           <div class="d-flex justify-content-between">
             <h5>Order #${order.order_id}</h5>
-            <span class="badge ${order.status === 'DELIVERED' ? 'bg-success' : 'bg-warning'}">
+            <span class="badge ${
+              order.status === 'DELIVERED' ? 'bg-success' : 'bg-warning'
+            }">
               ${order.status}
             </span>
           </div>

@@ -1,100 +1,29 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <title>Bindaas Bites – Menu</title>
-
-  <!-- Bootstrap CSS -->
-  <link
-    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
-    rel="stylesheet"
-  />
-
-  <style>
-    body {
-      background: #f8f9fa;
-      padding-bottom: 180px; /* space for cart */
-    }
-
-    .menu-card {
-      border-radius: 12px;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
-    }
-
-    .qty-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      font-weight: bold;
-      padding: 0;
-    }
-
-    .cart {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      background: #ffffff;
-      box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.1);
-      padding: 15px;
-      z-index: 1000;
-    }
-
-    .cart-items {
-      max-height: 90px;
-      overflow-y: auto;
-      font-size: 14px;
-    }
-  </style>
+  <title>Bindaas Bites Menu</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 
-<body>
+<body class="bg-light pb-5">
 
-  <!-- HEADER -->
-  <div class="container my-4">
-    <h2 class="text-center mb-3">🍔 Bindaas Bites Menu</h2>
+<div class="container my-4">
+  <h2 class="text-center">🍔 Bindaas Bites Menu</h2>
 
-    <!-- SEARCH BAR -->
-    <div class="row mb-4">
-      <div class="col-md-6 mx-auto">
-        <input
-          type="text"
-          id="search"
-          class="form-control"
-          placeholder="🔍 Search food item or category..."
-          onkeyup="searchMenu()"
-        />
-      </div>
-    </div>
+  <input class="form-control my-3"
+    placeholder="Search food..."
+    id="search"
+    onkeyup="searchMenu()"/>
 
-    <!-- MENU GRID -->
-    <div class="row" id="menu"></div>
-  </div>
+  <div class="row" id="menu"></div>
+</div>
 
-  <!-- CART (FIXED AT BOTTOM) -->
-  <div class="cart">
-    <h5>🛒 Your Order</h5>
+<div class="fixed-bottom bg-white p-3 shadow">
+  <div id="cartItems"></div>
+  <strong>Total ₹<span id="total">0</span></strong>
+  <button class="btn btn-success w-100 mt-2" onclick="placeOrder()">Place Order</button>
+</div>
 
-    <div id="cartItems" class="cart-items mb-2">
-      <small>No items selected</small>
-    </div>
-
-    <div class="d-flex justify-content-between align-items-center">
-      <h6 class="mb-0">
-        Total: ₹<span id="total">0</span>
-      </h6>
-
-      <button
-        class="btn btn-success"
-        onclick="placeOrder()"
-      >
-        Place Order
-      </button>
-    </div>
-  </div>
-
-  <!-- MENU JS (IMPORTANT: defer) -->
-  <script src=".././backend/menu.js" defer></script>
-
+<script src="menu.js" defer></script>
 </body>
 </html>
