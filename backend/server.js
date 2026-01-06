@@ -83,7 +83,7 @@ app.post("/order", async (req, res) => {
     }
 
     const orderRes = await pool.query(
-      "INSERT INTO orders(total_amount, user_id, user_name) VALUES($1,$2,$3) RETURNING id, order_at",
+      "INSERT INTO orders(total_amount) VALUES($1) RETURNING id, order_at",
       [total]
     );
 
