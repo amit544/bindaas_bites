@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Bindaas Bites – Order Details</title>
+
+  <!-- Bootstrap -->
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+  />
+
+  <style>
+    body {
+      background: #f4f6f9;
+    }
+
+    .order-card {
+      border-radius: 12px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+      border-left: 5px solid #28a745;
+    }
+
+    .order-items {
+      font-size: 14px;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="container my-4">
+  <h2 class="text-center mb-4">📦 Order Details</h2>
+
+  <div id="orders"></div>
+</div>
+
+<script>
+fetch("http://localhost:3000/orders/history")
+  .then(res => res.json())
+  .then(data => {
+    const ordersDiv = document.getElementById("orders");
+    let html = "";
+
+    const grouped = {};
+
+    // Group items by order
+    data.forEach(row => {
+      if (!grouped[row.order_id]) {
+        grouped[row.order_id] = {
+          order_id: row.order_id,
+          date: row.order_date,
+          time: row.order_time,
+          status: row.status,
+          total: row.total_amount,
+          items: []
+        };
+      }
+      grouped[row.order_id].items.push(
+        `${row.item_name} x ${row.quantity}`
+      );
+    });
+
+    Object.values(grouped).forEach(order => {
+      html += `
+        <div class="card order-card p-3 mb-4">
+          <div class="d-flex justify-content-between">
+            <h5>Order #${order.order_id}</h5>
+            <span class="badge ${order.status === 'DELIVERED' ? 'bg-success' : 'bg-warning'}">
+              ${order.status}
+            </span>
+          </div>
+
+          <small class="text-muted">
+            📅 ${order.date} &nbsp; ⏰ ${order.time}
+          </small>
+
+          <hr>
+
+          <div class="order-items">
+            ${order.items.map(i => `<div>🍽 ${i}</div>`).join("")}
+          </div>
+
+          <hr>
+
+          <h6>Total: ₹${order.total}</h6>
+        </div>
+      `;
+    });
+
+    ordersDiv.innerHTML =
+      html || "<p class='text-center text-muted'>No orders found</p>";
+  })
+  .catch(() => {
+    document.getElementById("orders").innerHTML =
+      "<p class='text-danger text-center'>Failed to load orders</p>";
+  });
+</script>
+
+</body>
+</html>
