@@ -49,7 +49,7 @@ app.get("/menu", async (req, res) => {
 });
 
 // (Optional admin menu add)
-app.post("/menu", , async (req, res) => {
+app.post("/menu", async (req, res) => {
   const { name, price, category } = req.body;
 
   await pool.query(
@@ -63,7 +63,7 @@ app.post("/menu", , async (req, res) => {
 // ==============================
 // ORDER ROUTES (PROTECTED)
 // ==============================
-app.post("/order", , async (req, res) => {
+app.post("/order", async (req, res) => {
   const { items } = req.body;
   const { userId, name } = req.user;
 
@@ -112,7 +112,7 @@ app.post("/order", , async (req, res) => {
 // ==============================
 // CHEF ROUTES (PROTECTED)
 // ==============================
-app.get("/orders", , async (req, res) => {
+app.get("/orders", async (req, res) => {
   const result = await pool.query(`
     SELECT
       o.id,
@@ -130,7 +130,7 @@ app.get("/orders", , async (req, res) => {
   res.json(result.rows);
 });
 
-app.put("/order/:id/deliver", , async (req, res) => {
+app.put("/order/:id/deliver", async (req, res) => {
   await pool.query(
     "UPDATE orders SET status='DELIVERED' WHERE id=$1",
     [req.params.id]
@@ -141,7 +141,7 @@ app.put("/order/:id/deliver", , async (req, res) => {
 // ==============================
 // ORDER HISTORY
 // ==============================
-app.get("/orders/history", , async (req, res) => {
+app.get("/orders/history", async (req, res) => {
   const result = await pool.query(`
     SELECT
       o.id AS order_id,
