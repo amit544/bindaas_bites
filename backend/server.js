@@ -65,7 +65,7 @@ app.post("/menu", async (req, res) => {
 // ==============================
 app.post("/order", async (req, res) => {
   const { items } = req.body;
-  const { userId, name } = req.user;
+  //const { userId, name } = req.user;
 
   if (!items || items.length === 0) {
     return res.status(400).json({ message: "No items in order" });
@@ -84,7 +84,7 @@ app.post("/order", async (req, res) => {
 
     const orderRes = await pool.query(
       "INSERT INTO orders(total_amount, user_id, user_name) VALUES($1,$2,$3) RETURNING id, order_at",
-      [total, userId, name]
+      [total]
     );
 
     const orderId = orderRes.rows[0].id;
