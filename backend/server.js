@@ -5,7 +5,7 @@ const path = require("path");
 const { Server } = require("socket.io");
 
 const pool = require("./db");
-const authMiddleware = require("./middleware/auth");
+//const authMiddleware = require("./middleware/auth");
 const authRoutes = require("./routes/auth");
 
 require("dotenv").config({ path: path.join(__dirname, ".env") });
@@ -30,7 +30,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, "../frontend")));
 
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "../frontend/login.html"));
+  res.sendFile(path.join(__dirname, "../frontend/menu.html"));
 });
 
 // ==============================
