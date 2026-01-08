@@ -1,0 +1,37 @@
+<script>
+const token = localStorage.getItem("token");
+let data = [];
+
+function load() {
+  fetch(`/order/${oid.value}`, {
+    headers: { Authorization: "Bearer " + token }
+  })
+  .then(res => res.json())
+  .then(d => {
+    data = d;
+    items.innerHTML = d.map((i, idx) => `
+      <div>
+        ${i.name}
+        <input type="number" value="${i.quantity}"
+          onchange="data[${idx}].quantity=this.value">
+      </div>
+    `).join("");
+  });
+}
+
+function save() {
+  fetch(`/order/${oid.value}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + token
+    },
+    body: JSON.stringify({
+      items: data.map(i => ({
+        id: i.item_id,   // ✅ correct
+        qty: Number(i.quantity)
+      }))
+    })
+  }).then(() => alert("Order updated"));
+}
+</script>

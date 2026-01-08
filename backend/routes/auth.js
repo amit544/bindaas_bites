@@ -1,61 +1,46 @@
 const express = require("express");
+const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const pool = require("../db");
 
 const router = express.Router();
 
-/**
- * POST /auth/login
- * Body: { username, password }
- */
 router.post("/login", async (req, res) => {
   const { username, password } = req.body;
+  console.log(username,"username");
+  const userRes = await pool.query(
+    "SELECT * FROM users WHERE name=$1",
+    [username]
+  );
+   console.log("password",userRes.rows[0]);
+  if (!userRes.rows.length)
+    return res.status(401).json({ message: "Invalid credentials" });
 
-  if (!username || !password) {
-    return res.status(400).json({ message: "Username and password required" });
-  }
+  const user = userRes.rows[0];
+  console.log(password);
+  const ok = await bcrypt.compare(password, user.password);
+  console.log("is correct",ok);
 
-  try {
-    const result = await pool.query(
-      "SELECT id, username, name, password, role FROM users WHERE username=$1 AND is_active=true",
-      [username]
-    );
+  (async () => {
+  const hash = await bcrypt.hash("amit", 10);
+  console.log(hash);
+})();
+  (async () => {
+  console.log(await bcrypt.compare("amit", "$2b$10$Z6Yzv5R2Wz4ZyU0X9mJvFevY6E4z7z2Wq6M3hF5Kx2Y9xQpF0K8iW"));
+  console.log(await bcrypt.compare("amit ", "$2b$10$Z6Yzv5R2Wz4ZyU0X9mJvFevY6E4z7z2Wq6M3hF5Kx2Y9xQpF0K8iW"));
+})();
+  if (!ok) return res.status(401).json({ message: "Invalid credentials" });
 
-    if (result.rows.length === 0) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
+  const token = jwt.sign(
+    { userId: user.id, name: user.name, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: "7d" }
+  );
 
-    const user = result.rows[0];
-
-    // ⚠️ Plain password check (OK for now)
-    if (user.password !== password) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-
-    // Create JWT token
-    const token = jwt.sign(
-      {
-        userId: user.id,
-        name: user.name,
-        role: user.role
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "1d" }
-    );
-
-    // Send token + user info
-    res.json({
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        role: user.role
-      }
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Login failed" });
-  }
+  res.json({
+    token,
+    user: { id: user.id, name: user.name, role: user.role }
+  });
 });
 
 module.exports = router;

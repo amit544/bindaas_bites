@@ -1,141 +1,202 @@
-// ==============================
-// STATE
-// ==============================
-let menuData = [];
+/* =========================
+   AUTH CHECK
+========================= */
+const token = localStorage.getItem("token");
+if (!token) location.href = "/login.html";
+
+/* =========================
+   DOM ELEMENTS
+========================= */
+const menuEl = document.getElementById("menu");
+const cartItemsEl = document.getElementById("cartItems");
+const totalEl = document.getElementById("total");
+
+/* =========================
+   USER NAME
+========================= */
+const userName = localStorage.getItem("userName");
+document.getElementById("userName").innerText = userName || "User";
+
+/* =========================
+   STATE
+========================= */
 let cart = {};
-let total = 0;
+let menuData = [];
+const editOrderId = localStorage.getItem("editOrderId");
 
-// ==============================
-// LOAD MENU
-// ==============================
-fetch("/menu")
-  .then(res => res.json())
-  .then(data => {
-    menuData = data;
-    renderMenu(menuData); // show all by default
+/* =========================
+   FETCH MENU
+========================= */
+fetch("/menu", {
+  headers: { Authorization: "Bearer " + token }
+})
+  .then(r => r.json())
+  .then(d => {
+    menuData = d;
+    renderMenu(menuData);
+    renderCart();
+
+    // 🔑 LOAD OLD ORDER IF EDIT MODE
+    if (editOrderId) {
+      loadOrderForEdit();
+    }
+  });
+
+/* =========================
+   LOAD ORDER FOR EDIT
+========================= */
+function loadOrderForEdit() {
+  fetch(`/order/${editOrderId}`, {
+    headers: { Authorization: "Bearer " + token }
   })
-  .catch(err => console.error("Menu load failed", err));
+    .then(r => r.json())
+    .then(items => {
+      cart = {};
 
-// ==============================
-// RENDER MENU
-// ==============================
-function renderMenu(data) {
-  const menuDiv = document.getElementById("menu");
-  let html = "";
+      items.forEach(i => {
+        cart[i.item_id] = {
+          id: i.item_id,
+          name: i.name,
+          price: i.price,
+          qty: i.quantity
+        };
+      });
 
-  data.forEach(item => {
-    html += `
-      <div class="col-md-4 mb-3">
-        <div class="card menu-card p-3">
-          <h5>${item.name}</h5>
-          <p class="text-muted">${item.category}</p>
-          <h6>₹${item.price}</h6>
+      renderMenu(menuData);
+      renderCart();
+    });
+}
+
+/* =========================
+   RENDER MENU
+========================= */
+function renderMenu(items) {
+  menuEl.innerHTML = "";
+
+  items.forEach(i => {
+    const qty = cart[i.id]?.qty || 0;
+    const selectedClass = qty > 0 ? "selected" : "";
+
+    menuEl.innerHTML += `
+      <div class="col-12 col-md-6">
+        <div class="card menu-card p-3 ${selectedClass}">
+          <h5>${i.name}</h5>
+          <h6 class="text-muted">₹${i.price}</h6>
 
           <div class="d-flex align-items-center mt-2">
-            <button class="btn btn-outline-danger qty-btn"
-              onclick="decrease(${item.id}, ${item.price})">−</button>
+            <button class="btn btn-outline-secondary qty-btn"
+              onclick="updateQty(${i.id}, -1)">−</button>
 
-            <span class="mx-2" id="qty-${item.id}">
-              ${cart[item.id]?.qty || 0}
-            </span>
+            <span class="mx-3 qty-text">${qty}</span>
 
-            <button class="btn btn-outline-success qty-btn"
-              onclick="increase(${item.id}, ${item.price}, '${item.name.replace(/'/g, "\\'")}')">+</button>
+            <button class="btn btn-outline-secondary qty-btn"
+              onclick="updateQty(${i.id}, 1)">+</button>
           </div>
         </div>
       </div>
     `;
   });
-
-  menuDiv.innerHTML =
-    html || "<p class='text-center text-muted'>No items found</p>";
 }
 
-// ==============================
-// SEARCH
-// ==============================
-function searchMenu() {
-  const keyword = document.getElementById("search").value.toLowerCase().trim();
 
-  if (!keyword) {
-    renderMenu(menuData);
-    return;
-  }
+/* =========================
+   UPDATE QTY
+========================= */
+function updateQty(id, change) {
+  const item = menuData.find(i => i.id === id);
+  if (!item) return;
 
-  const filtered = menuData.filter(item =>
-    item.name.toLowerCase().includes(keyword) ||
-    item.category.toLowerCase().includes(keyword)
-  );
-
-  renderMenu(filtered);
-}
-
-// ==============================
-// CART
-// ==============================
-function increase(id, price, name) {
   if (!cart[id]) {
-    cart[id] = { id, name, price, qty: 0 };
+    cart[id] = {
+      id: item.id,
+      name: item.name,
+      price: item.price,
+      qty: 0
+    };
   }
-  cart[id].qty++;
-  total += price;
-  updateUI(id);
-}
 
-function decrease(id, price) {
-  if (!cart[id]) return;
+  cart[id].qty += change;
 
-  cart[id].qty--;
-  total -= price;
+  if (cart[id].qty <= 0) {
+    delete cart[id];
+  }
 
-  if (cart[id].qty <= 0) delete cart[id];
-  updateUI(id);
-}
-
-// ==============================
-// UI UPDATE
-// ==============================
-function updateUI(id) {
-  const qtyEl = document.getElementById(`qty-${id}`);
-  if (qtyEl) qtyEl.innerText = cart[id]?.qty || 0;
-
-  document.getElementById("total").innerText = total;
+  renderMenu(menuData);
   renderCart();
 }
 
+/* =========================
+   RENDER CART
+========================= */
 function renderCart() {
-  let html = "";
+  cartItemsEl.innerHTML = "";
+  let total = 0;
+
   Object.values(cart).forEach(i => {
-    html += `<div>${i.name} x ${i.qty}</div>`;
+    total += i.qty * i.price;
+    cartItemsEl.innerHTML += `<div>${i.name} × ${i.qty}</div>`;
   });
 
-  document.getElementById("cartItems").innerHTML =
-    html || "<small>No items selected</small>";
+  if (total === 0) {
+    cartItemsEl.innerHTML = "<small>No items selected</small>";
+  }
+
+  totalEl.innerText = total;
 }
 
-// ==============================
-// PLACE ORDER
-// ==============================
-function placeOrder() {
-  const items = Object.values(cart).map(i => ({
-    id: i.id,
-    qty: i.qty
-  }));
+/* =========================
+   SEARCH
+========================= */
+function searchMenu() {
+  const q = document.getElementById("search").value.toLowerCase();
+  const filtered = menuData.filter(i =>
+    i.name.toLowerCase().includes(q)
+  );
+  renderMenu(filtered);
+}
 
-  if (!items.length) {
-    alert("Please select items");
+/* =========================
+   PLACE / UPDATE ORDER
+========================= */
+function placeOrder() {
+  if (Object.keys(cart).length === 0) {
+    alert("Cart is empty");
     return;
   }
 
-  fetch("/order", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ items })
+  const payload = {
+    items: Object.values(cart).map(i => ({
+      id: i.id,
+      qty: i.qty
+    }))
+  };
+
+  const url = editOrderId ? `/order/${editOrderId}` : "/order";
+  const method = editOrderId ? "PUT" : "POST";
+
+  fetch(url, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + token
+    },
+    body: JSON.stringify(payload)
   })
-    .then(res => res.json())
-    .then(data => {
-      alert(`✅ Order #${data.orderId || ""} placed successfully`);
-      location.reload();
+    .then(res => {
+      if (!res.ok) throw new Error("Order failed");
+      return res.json();
     })
-    .catch(() => alert("❌ Order failed"));
+    .then(() => {
+      localStorage.removeItem("editOrderId");
+      location.href = "/order.html";
+    })
+    .catch(() => alert("Failed to save order"));
+}
+
+/* =========================
+   LOGOUT
+========================= */
+function logout() {
+  localStorage.clear();
+  location.href = "/login.html";
 }

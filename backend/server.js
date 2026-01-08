@@ -5,181 +5,151 @@ const path = require("path");
 const { Server } = require("socket.io");
 
 const pool = require("./db");
-//const  = require("./middleware/auth");
+const auth = require("./middleware/auth");
 const authRoutes = require("./routes/auth");
-
-require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*" }
-});
+const io = new Server(server);
 
-const PORT = process.env.PORT || 3000;
-
-// ==============================
-// MIDDLEWARE
-// ==============================
 app.use(cors());
 app.use(express.json());
 
-// ==============================
-// STATIC FRONTEND
-// ==============================
+app.use("/order", require("./routes/order"));
 app.use(express.static(path.join(__dirname, "../frontend")));
+app.use("/orders", require("./routes/order"));
 
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "../frontend/menu.html"));
-});
+app.get("/", (_, res) =>
+  res.sendFile(path.join(__dirname, "../frontend/login.html"))
+);
 
-// ==============================
-// AUTH ROUTES
-// ==============================
 app.use("/auth", authRoutes);
 
-// ==============================
-// MENU ROUTES
-// ==============================
-app.get("/menu", async (req, res) => {
-  const result = await pool.query(
-    "SELECT * FROM menu_items WHERE is_available=true ORDER BY category"
+/* MENU */
+app.get("/menu", async (_, res) => {
+  const r = await pool.query(
+    "SELECT * FROM menu_items WHERE is_available=true"
   );
-  res.json(result.rows);
+  res.json(r.rows);
 });
 
-// (Optional admin menu add)
-app.post("/menu", async (req, res) => {
-  const { name, price, category } = req.body;
 
-  await pool.query(
-    "INSERT INTO menu_items(name, price, category) VALUES($1,$2,$3)",
-    [name, price, category]
-  );
-
-  res.json({ message: "Menu item added" });
-});
-
-// ==============================
-// ORDER ROUTES (PROTECTED)
-// ==============================
-app.post("/order", async (req, res) => {
+/* PLACE ORDER */
+app.post("/order", auth, async (req, res) => {
   const { items } = req.body;
-  //const { userId, name } = req.user;
-
-  if (!items || items.length === 0) {
-    return res.status(400).json({ message: "No items in order" });
-  }
-
-  try {
-    let total = 0;
-
-    for (let i of items) {
-      const priceRes = await pool.query(
-        "SELECT price FROM menu_items WHERE id=$1",
-        [i.id]
-      );
-      total += priceRes.rows[0].price * i.qty;
-    }
-
-    const orderRes = await pool.query(
-      "INSERT INTO orders(total_amount) VALUES($1) RETURNING id, order_at",
-      [total]
+  let total = 0;
+console.log("user detais",req.user.userId);
+  // 1️⃣ Calculate total
+  for (let i of items) {
+    const p = await pool.query(
+      "SELECT price FROM menu_items WHERE id = $1",
+      [i.id]
     );
 
-    const orderId = orderRes.rows[0].id;
-
-    for (let i of items) {
-      await pool.query(
-        "INSERT INTO order_items(order_id, menu_item_id, quantity) VALUES($1,$2,$3)",
-        [orderId, i.id, i.qty]
-      );
+    if (p.rowCount === 0) {
+      return res.status(400).json({ message: "Invalid menu item" });
     }
 
-    io.emit("new-order", orderId);
-
-    res.json({
-      message: "Order placed successfully",
-      orderId,
-      orderTime: orderRes.rows[0].order_at
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Order failed" });
+    total += p.rows[0].price * i.qty;
   }
+
+  // 2️⃣ Create order WITH created_by
+  const order = await pool.query(
+    `
+    INSERT INTO orders (total_amount, status, created_by, updated_by)
+    VALUES ($1, 'PENDING', $2, $2)
+    RETURNING id
+    `,
+    [total, req.user.userId]
+  );
+
+  const orderId = order.rows[0].id;
+
+  // 3️⃣ Insert order items
+  for (let i of items) {
+    await pool.query(
+      `
+      INSERT INTO order_items (order_id, menu_item_id, quantity)
+      VALUES ($1, $2, $3)
+      `,
+      [orderId, i.id, i.qty]
+    );
+  }
+
+  // 4️⃣ Notify (Socket)
+  io.emit("new-order", { orderId });
+
+  res.json({ orderId });
 });
 
-// ==============================
-// CHEF ROUTES (PROTECTED)
-// ==============================
-app.get("/orders", async (req, res) => {
-  const result = await pool.query(`
-    SELECT
-      o.id,
-      o.status,
-      TO_CHAR(o.order_at, 'HH12:MI AM') AS time,
-      m.name,
-      oi.quantity
+
+/* CHEF */
+app.get("/orders", auth, async (_, res) => {
+  const r = await pool.query(`
+    SELECT o.id, m.name, oi.quantity,
+    TO_CHAR(o.order_at,'HH12:MI AM') time
     FROM orders o
-    JOIN order_items oi ON o.id = oi.order_id
-    JOIN menu_items m ON m.id = oi.menu_item_id
-    WHERE o.status != 'DELIVERED'
-    ORDER BY o.order_at DESC
+    JOIN order_items oi ON o.id=oi.order_id
+    JOIN menu_items m ON m.id=oi.menu_item_id
+    WHERE o.status='PENDING'
+    ORDER BY o.id DESC
   `);
-
-  res.json(result.rows);
+  res.json(r.rows);
 });
 
-app.put("/order/:id/deliver", async (req, res) => {
+app.put("/order/:id/deliver", auth, async (req, res) => {
   await pool.query(
     "UPDATE orders SET status='DELIVERED' WHERE id=$1",
     [req.params.id]
   );
-  res.json({ message: "Order delivered" });
+  res.json({ success: true });
 });
 
-// ==============================
-// ORDER HISTORY
-// ==============================
-app.get("/orders/history", async (req, res) => {
-  const result = await pool.query(`
-    SELECT
-      o.id AS order_id,
-      o.status,
-      o.total_amount,
-      o.user_name,
-      TO_CHAR(o.order_at, 'DD Mon YYYY') AS order_date,
-      TO_CHAR(o.order_at, 'HH12:MI AM') AS order_time,
-      m.name AS item_name,
-      oi.quantity
+/* BILL – GET ORDER */
+app.get("/order/:id", auth, async (req, res) => {
+  const r = await pool.query(`
+    SELECT o.status,m.id item_id,m.name,m.price,oi.quantity
     FROM orders o
-    JOIN order_items oi ON o.id = oi.order_id
-    JOIN menu_items m ON m.id = oi.menu_item_id
-    ORDER BY o.id DESC
-  `);
+    JOIN order_items oi ON o.id=oi.order_id
+    JOIN menu_items m ON m.id=oi.menu_item_id
+    WHERE o.id=$1
+  `, [req.params.id]);
 
-  res.json(result.rows);
+  if (!r.rows.length || r.rows[0].status !== "PENDING")
+    return res.status(400).json({ message: "Cannot edit order" });
+
+  res.json(r.rows);
 });
 
-// ==============================
-// DB CHECK
-// ==============================
-async function checkDB() {
-  try {
-    await pool.query("SELECT 1");
-    console.log("✅ Database connected successfully");
-  } catch (err) {
-    console.error("❌ Database connection failed");
-    console.error(err.message);
-    process.exit(1);
+/* BILL – UPDATE ORDER */
+app.put("/order/:id", auth, async (req, res) => {
+  console.log("role",req.user.role);
+  if (!["bill","admin"].includes(req.user.role))
+    return res.sendStatus(403);
+
+  const { items } = req.body;
+  await pool.query("DELETE FROM order_items WHERE order_id=$1", [req.params.id]);
+
+  let total = 0;
+  for (let i of items) {
+    const p = await pool.query(
+      "SELECT price FROM menu_items WHERE id=$1",
+      [i.id]
+    );
+    total += p.rows[0].price * i.qty;
+
+    await pool.query(
+      "INSERT INTO order_items(order_id,menu_item_id,quantity) VALUES($1,$2,$3)",
+      [req.params.id, i.id, i.qty]
+    );
   }
-}
 
-checkDB();
+  await pool.query(
+    "UPDATE orders SET total_amount=$1 WHERE id=$2",
+    [total, req.params.id]
+  );
 
-// ==============================
-// START SERVER
-// ==============================
-server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  res.json({ message: "Order updated", total });
 });
+
+server.listen(process.env.PORT || 3000);
