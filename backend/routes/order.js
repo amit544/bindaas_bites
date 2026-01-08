@@ -39,7 +39,7 @@ router.get("/history", auth, async (req, res) => {
     WHERE o.created_by = $1
      AND (o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date
           = (NOW() AT TIME ZONE 'Asia/Kolkata')::date
-    ORDER BY o.created_at DESC
+    ORDER BY o.created_at asc;
     `,
     [req.user.userId]
   );
