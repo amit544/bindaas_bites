@@ -24,6 +24,9 @@ let cart = {};
 let menuData = [];
 const editOrderId = localStorage.getItem("editOrderId");
 
+// Track most recently added item (for better ordering)
+let lastAddedId = null;
+
 /* =========================
    FETCH MENU
 ========================= */
@@ -36,7 +39,6 @@ fetch("/menu", {
     renderMenu(menuData);
     renderCart();
 
-    // 🔑 LOAD OLD ORDER IF EDIT MODE
     if (editOrderId) {
       loadOrderForEdit();
     }
@@ -68,12 +70,26 @@ function loadOrderForEdit() {
 }
 
 /* =========================
-   RENDER MENU
+   RENDER MENU (SMART SORTING)
 ========================= */
 function renderMenu(items) {
   menuEl.innerHTML = "";
 
-  items.forEach(i => {
+  // 🔥 Sort logic:
+  // 1. Recently added on top
+  // 2. Other selected items next
+  // 3. Unselected items below
+  const sortedItems = [...items].sort((a, b) => {
+    if (a.id === lastAddedId) return -1;
+    if (b.id === lastAddedId) return 1;
+
+    const aSelected = cart[a.id]?.qty > 0 ? 1 : 0;
+    const bSelected = cart[b.id]?.qty > 0 ? 1 : 0;
+
+    return bSelected - aSelected;
+  });
+
+  sortedItems.forEach(i => {
     const qty = cart[i.id]?.qty || 0;
     const selectedClass = qty > 0 ? "selected" : "";
 
@@ -98,7 +114,6 @@ function renderMenu(items) {
   });
 }
 
-
 /* =========================
    UPDATE QTY
 ========================= */
@@ -119,6 +134,9 @@ function updateQty(id, change) {
 
   if (cart[id].qty <= 0) {
     delete cart[id];
+  } else {
+    // 🔥 Mark this as most recently added/updated
+    lastAddedId = id;
   }
 
   renderMenu(menuData);
