@@ -22,15 +22,25 @@ app.use("/orders", require("./routes/order"));
 app.get("/", (_, res) =>
   res.sendFile(path.join(__dirname, "../frontend/login.html"))
 );
-
+//const redisClient = require("./redis");
 app.use("/auth", authRoutes);
 
 /* MENU */
 app.get("/menu", async (_, res) => {
+    //   const cached = await redisClient.get("menu_cache");
+    // if (cached) {
+    //   console.log("⚡ Served from Redis");
+    //   return res.json(JSON.parse(cached));
+    // }
+
+    // // 2. Otherwise query DB
+    // console.log("🐘 Served from DB");
   const r = await pool.query(
     "SELECT * FROM menu_items WHERE is_available=true"
   );
+  // await redisClient.setEx("menu_cache", 3600, JSON.stringify(r.rows));
   res.json(r.rows);
+
 });
 
 
