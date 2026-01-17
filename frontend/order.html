@@ -52,7 +52,7 @@
 <div class="container my-4">
   <h3 class="text-center mb-4">📦 Order History</h3>
 
-  <!-- SUMMARY -->
+  <!-- SUMMARY DASHBOARD -->
   <div id="summary" class="row g-3 mb-4"></div>
 
   <div id="orders"></div>
@@ -70,7 +70,6 @@ fetch("/orders/history", {
 })
   .then(res => res.json())
   .then(rows => {
-
     const ordersDiv = document.getElementById("orders");
 
     if (!rows.length) {
@@ -89,18 +88,18 @@ fetch("/orders/history", {
     let pending = 0;
     let cancelled = 0;
 
-    const uniqueOrders = {};
+    const unique = {};
 
     rows.forEach(r => {
-      if (!uniqueOrders[r.order_id]) {
-        uniqueOrders[r.order_id] = true;
+      if (!unique[r.order_id]) {
+        unique[r.order_id] = true;
+
+        const amount = Number(r.total_amount || 0);
+        totalSale += amount;
 
         if (r.status === "DELIVERED") delivered++;
         if (r.status === "PENDING") pending++;
         if (r.status === "CANCELLED") cancelled++;
-
-        const amount = Number(r.total_amount || 0);
-        totalSale += amount;
 
         if (r.payment_status === "PAID") {
           if (r.payment_mode === "CASH") totalCash += amount;
@@ -119,7 +118,7 @@ fetch("/orders/history", {
     `;
 
     // =======================
-    // GROUP ORDERS
+    // GROUP ORDERS (OLD LOGIC)
     // =======================
     const orders = {};
 
@@ -178,10 +177,86 @@ fetch("/orders/history", {
             <strong>${o.payment_status || "UNPAID"}</strong>
             ${o.payment_mode ? `(${o.payment_mode})` : ""}
           </p>
+
+          ${
+            o.status === "PENDING"
+              ? `
+                <div class="mt-2 d-flex flex-wrap gap-2">
+                  ${
+                    o.payment_status !== "PAID"
+                      ? `
+                        <button class="btn btn-sm btn-success"
+                          onclick="markPaid(${o.id}, 'CASH')">
+                          💵 Cash Paid
+                        </button>
+                        <button class="btn btn-sm btn-info"
+                          onclick="markPaid(${o.id}, 'ONLINE')">
+                          💳 Online Paid
+                        </button>
+                      `
+                      : ""
+                  }
+
+                  <button class="btn btn-sm btn-primary"
+                    onclick="editOrder(${o.id})">
+                    Edit
+                  </button>
+
+                  <button class="btn btn-sm btn-danger"
+                    onclick="cancelOrder(${o.id})">
+                    Cancel
+                  </button>
+
+                  ${
+                    o.payment_status === "PAID"
+                      ? `
+                        <button class="btn btn-sm btn-dark"
+                          onclick="markDelivered(${o.id})">
+                          🚚 Mark Delivered
+                        </button>
+                      `
+                      : ""
+                  }
+                </div>
+              `
+              : ""
+          }
         </div>
       `;
     }).join("");
   });
+
+function editOrder(id) {
+  localStorage.setItem("editOrderId", id);
+  location.href = "/menu.html";
+}
+
+function cancelOrder(id) {
+  if (!confirm("Cancel this order?")) return;
+
+  fetch(`/order/${id}`, {
+    method: "DELETE",
+    headers: { Authorization: "Bearer " + token }
+  }).then(() => location.reload());
+}
+
+function markPaid(id, mode) {
+  fetch(`/order/${id}/pay`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + token
+    },
+    body: JSON.stringify({ mode })
+  }).then(() => location.reload());
+}
+
+function markDelivered(id) {
+  fetch(`/order/${id}/deliver`, {
+    method: "PUT",
+    headers: { Authorization: "Bearer " + token }
+  }).then(() => location.reload());
+}
 
 function logout() {
   localStorage.clear();
