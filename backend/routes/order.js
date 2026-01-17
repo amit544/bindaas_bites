@@ -37,6 +37,8 @@ router.get("/history", auth, async (req, res) => {
     LEFT JOIN order_items oi ON oi.order_id = o.id
     LEFT JOIN menu_items m ON m.id = oi.menu_item_id
     WHERE o.created_by = $1
+     AND (o.created_at::date
+          = (NOW() AT TIME ZONE 'Asia/Kolkata')::date
     ORDER BY o.created_at asc;
     `,
     [req.user.userId]

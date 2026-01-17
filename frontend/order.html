@@ -63,7 +63,7 @@ fetch("/orders/history", {
   }
 
   // =========================
-  // SUMMARY
+  // SUMMARY (FIXED)
   // =========================
   let totalCash = 0, totalOnline = 0, totalSale = 0;
   let delivered = 0, pending = 0, cancelled = 0;
@@ -74,15 +74,19 @@ fetch("/orders/history", {
       seen[r.order_id] = true;
 
       const amount = Number(r.total_amount || 0);
-      totalSale += amount;
 
       if (r.status === "DELIVERED") delivered++;
       if (r.status === "PENDING") pending++;
       if (r.status === "CANCELLED") cancelled++;
 
-      if (r.payment_status === "PAID") {
-        if (r.payment_mode === "CASH") totalCash += amount;
-        if (r.payment_mode === "ONLINE") totalOnline += amount;
+      // Only PENDING + DELIVERED in totals
+      if (r.status !== "CANCELLED") {
+        totalSale += amount;
+
+        if (r.payment_status === "PAID") {
+          if (r.payment_mode === "CASH") totalCash += amount;
+          if (r.payment_mode === "ONLINE") totalOnline += amount;
+        }
       }
     }
   });
@@ -129,7 +133,7 @@ fetch("/orders/history", {
       return priority[a.status] - priority[b.status];
     }
 
-    return b.id - a.id; // latest order first
+    return b.id - a.id;
   });
 
   // =========================
@@ -184,7 +188,7 @@ fetch("/orders/history", {
 });
 
 // =========================
-// FUNCTIONS (UNCHANGED)
+// FUNCTIONS
 // =========================
 function editOrder(id) {
   localStorage.setItem("editOrderId", id);
