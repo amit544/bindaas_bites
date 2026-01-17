@@ -140,7 +140,23 @@ fetch("/orders/history", {
       }
     });
 
-    ordersDiv.innerHTML = Object.values(orders).map(o => {
+    // =======================
+    // NEW: SORTING LOGIC
+    // =======================
+    const sortedOrders = Object.values(orders).sort((a, b) => {
+      const priority = { PENDING: 1, DELIVERED: 2, CANCELLED: 3 };
+
+      if (priority[a.status] !== priority[b.status]) {
+        return priority[a.status] - priority[b.status];
+      }
+
+      return b.id - a.id; // latest order first
+    });
+
+    // =======================
+    // RENDER ORDERS
+    // =======================
+    ordersDiv.innerHTML = sortedOrders.map(o => {
       const statusClass =
         o.status === "CANCELLED" ? "cancelled" :
         o.status === "DELIVERED" ? "delivered" :
