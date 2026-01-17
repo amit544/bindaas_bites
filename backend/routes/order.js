@@ -27,7 +27,7 @@ router.get("/history", auth, async (req, res) => {
       o.id               AS order_id,
       o.status           AS status,
       o.total_amount     AS total_amount,
-      o.created_at       AS created_at,
+     (o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')      AS created_at,
       o.payment_status   AS payment_status,   -- ✅ ADD
       o.payment_mode     AS payment_mode,  
       m.name             AS item_name,
@@ -37,7 +37,7 @@ router.get("/history", auth, async (req, res) => {
     LEFT JOIN order_items oi ON oi.order_id = o.id
     LEFT JOIN menu_items m ON m.id = oi.menu_item_id
     WHERE o.created_by = $1
-     AND (o.created_at::date
+     AND (o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date
           = (NOW() AT TIME ZONE 'Asia/Kolkata')::date
     ORDER BY o.created_at asc;
     `,
