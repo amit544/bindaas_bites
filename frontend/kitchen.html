@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Bindaas Bites – Kitchen</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  
+  <style>
+    * { box-sizing: border-box; }
+    
+    body { 
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      color: #fff;
+    }
+    
+    .header {
+      background: rgba(255,255,255,0.1);
+      backdrop-filter: blur(10px);
+      padding: 15px 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .column-container {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 15px;
+      padding: 15px;
+      height: calc(100vh - 80px);
+    }
+    
+    .staff-column {
+      background: rgba(255,255,255,0.05);
+      border-radius: 16px;
+      padding: 15px;
+      overflow-y: auto;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .staff-header {
+      text-align: center;
+      padding: 10px;
+      border-radius: 10px;
+      margin-bottom: 15px;
+      font-weight: bold;
+      font-size: 1.3rem;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    
+    .pranav-header { background: linear-gradient(135deg, #f093fb, #f5576c); }
+    .vatsala-header { background: linear-gradient(135deg, #4facfe, #00f2fe); }
+    .harsh-header { background: linear-gradient(135deg, #43e97b, #38f9d7); }
+    .kamal-header { background: linear-gradient(135deg, #fa709a, #fee140); }
+    
+    .order-card {
+      background: rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 10px;
+      border-left: 4px solid #ffc107;
+      transition: all 0.3s ease;
+    }
+    
+    .order-card:hover {
+      transform: translateX(5px);
+      background: rgba(255,255,255,0.15);
+    }
+    
+    .order-card.priority-high {
+      border-left-color: #dc3545;
+      animation: pulse-priority 2s infinite;
+    }
+    
+    @keyframes pulse-priority {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4); }
+      50% { box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }
+    }
+    
+    .order-number {
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: #ffc107;
+    }
+    
+    .order-card.priority-high .order-number {
+      color: #dc3545;
+    }
+    
+    .item-name {
+      font-size: 1.1rem;
+      margin: 5px 0;
+    }
+    
+    .item-name.combo-item {
+      background: rgba(255, 193, 7, 0.2);
+      padding: 5px 10px;
+      border-radius: 8px;
+      border-left: 3px solid #ffc107;
+    }
+    
+    .item-name.special-combo-item {
+      background: rgba(250, 112, 154, 0.3);
+      padding: 5px 10px;
+      border-radius: 8px;
+      border-left: 3px solid #fa709a;
+    }
+    
+    .special-badge {
+      background: linear-gradient(135deg, #fa709a, #fee140);
+      color: #000;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: bold;
+      margin-left: 5px;
+    }
+    
+    .item-qty {
+      background: rgba(255,255,255,0.2);
+      padding: 2px 10px;
+      border-radius: 20px;
+      font-weight: bold;
+    }
+    
+    .order-time {
+      font-size: 0.8rem;
+      color: rgba(255,255,255,0.6);
+    }
+    
+    .remarks {
+      background: rgba(255,193,7,0.2);
+      padding: 5px 10px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      margin-top: 8px;
+    }
+    
+    .btn-done {
+      width: 100%;
+      margin-top: 10px;
+      background: linear-gradient(135deg, #11998e, #38ef7d);
+      border: none;
+      font-weight: bold;
+    }
+    
+    .btn-done:hover {
+      background: linear-gradient(135deg, #0f8a7e, #2ed86b);
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: rgba(255,255,255,0.4);
+    }
+    
+    .empty-state-icon {
+      font-size: 3rem;
+      margin-bottom: 10px;
+    }
+    
+    .count-badge {
+      background: rgba(255,255,255,0.2);
+      padding: 3px 12px;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      margin-left: 10px;
+    }
+    
+    /* Mobile responsive */
+    @media (max-width: 1200px) {
+      .column-container {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    
+    @media (max-width: 768px) {
+      .column-container {
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+      
+      .staff-column {
+        min-height: 300px;
+        max-height: 400px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+<!-- HEADER -->
+<div class="header d-flex justify-content-between align-items-center">
+  <h4 class="m-0">👨‍🍳 Kitchen Dashboard</h4>
+  <div class="d-flex align-items-center gap-2">
+    <span class="badge bg-success">🔄 Live Sync</span>
+    <span id="lastUpdate" class="text-muted" style="font-size: 0.85rem;">--</span>
+    <a href="/menu.html" class="btn btn-outline-light btn-sm">Menu</a>
+    <a href="/order.html" class="btn btn-outline-light btn-sm">Orders</a>
+  </div>
+</div>
+
+<!-- FOUR COLUMNS -->
+<div class="column-container">
+  <!-- PRANAV - Hot items -->
+  <div class="staff-column" id="pranav-column">
+    <div class="staff-header pranav-header">
+      🔥 PRANAV <span class="count-badge" id="pranav-count">0</span>
+    </div>
+    <div id="pranav-orders"></div>
+  </div>
+  
+  <!-- VATSALA - Fries & Nachos -->
+  <div class="staff-column" id="vatsala-column">
+    <div class="staff-header vatsala-header">
+      🍟 VATSALA <span class="count-badge" id="vatsala-count">0</span>
+    </div>
+    <div id="vatsala-orders"></div>
+  </div>
+  
+  <!-- HARSH - Drinks -->
+  <div class="staff-column" id="harsh-column">
+    <div class="staff-header harsh-header">
+      🥤 HARSH <span class="count-badge" id="harsh-count">0</span>
+    </div>
+    <div id="harsh-orders"></div>
+  </div>
+  
+  <!-- KAMAL - Sandwiches & Burgers -->
+  <div class="staff-column" id="kamal-column">
+    <div class="staff-header kamal-header">
+      🍔 KAMAL <span class="count-badge" id="kamal-count">0</span>
+    </div>
+    <div id="kamal-orders"></div>
+  </div>
+</div>
+
+<script>
+const token = localStorage.getItem("token");
+if (!token) location.href = "/login.html";
+
+// ========================================
+// ITEM CATEGORIZATION
+// ========================================
+
+// Pranav's items (Hot Coffee, Hot Chocolate, Brownies)
+const PRANAV_ITEMS = [
+  'hot coffee',
+  'hot chocolate with brownie',
+  'hot chocolate with marshmallows',
+  'brownie with melted chocolate',
+  'brownie with ice cream',
+  'bindaas brownie blast',
+  'strawberry brownie chocolate bowl',
+  'strawberry chocolate pot'
+];
+
+// Vatsala's items (All Fries, Spirals, Nachos)
+const VATSALA_KEYWORDS = ['fries', 'spiral', 'nachos'];
+
+// Harsh's items (All Drinks)
+const HARSH_KEYWORDS = [
+  'cold coffee', 'mojito', 'shake', 'coldrink', 'milkshake'
+];
+
+// Kamal's items (Sandwiches & Burgers)
+const KAMAL_KEYWORDS = ['sandwich', 'burger'];
+
+// Combo items that need to be split
+const COMBO_SPLITS = {
+  'masala coldrink + french fries': { harsh: 'Masala Coldrink', vatsala: 'French Fries', isSpecial: false },
+  'mojito + fries': { harsh: 'Mojito', vatsala: 'Fries', isSpecial: false },
+  'cold coffee + fresh fries': { harsh: 'Cold Coffee', vatsala: 'Fresh Fries', isSpecial: false },
+  'cold coffee + cheese tandoori nachos': { harsh: 'Cold Coffee', vatsala: 'Cheese Tandoori Nachos', isSpecial: false },
+  'cold coffee + tandoori peri peri fries': { harsh: 'Cold Coffee', vatsala: 'Tandoori Peri Peri Fries', isSpecial: false },
+  'oreo shake + tandoori peri peri fries': { harsh: 'Oreo Shake', vatsala: 'Tandoori Peri Peri Fries', isSpecial: false },
+  'nutella shake + chocolate brownie bowl': { harsh: 'Nutella Shake', pranav: 'Chocolate Brownie Bowl', isSpecial: false },
+  'fruit milkshake + fresh fruit bowl': { harsh: 'Fruit Milkshake', isSpecial: false },
+  // SPECIAL COMBOS (₹179)
+  'bindaas special combo (burger + sandwich + fries + nachos + cold coffee)': { 
+    harsh: 'Cold Coffee', 
+    vatsala: 'Fries + Nachos', 
+    kamal: 'Burger + Sandwich',
+    isSpecial: true 
+  },
+  'bindaas special combo (tandoori sandwich / burger + peri peri fries + nachos + cold coffee)': { 
+    harsh: 'Cold Coffee', 
+    vatsala: 'Peri Peri Fries + Nachos', 
+    kamal: 'Tandoori Sandwich/Burger',
+    isSpecial: true 
+  }
+};
+
+function categorizeItem(itemName) {
+  const lowerName = itemName.toLowerCase();
+  
+  // Check if it's a combo that needs splitting
+  // Only match if the item name actually contains '+' or matches a combo exactly
+  // This prevents "Mojito" from being matched to "mojito + fries"
+  const isComboItem = lowerName.includes('+') || lowerName.includes('combo');
+  
+  if (isComboItem) {
+    for (const [combo, splits] of Object.entries(COMBO_SPLITS)) {
+      // Match if item contains the combo name OR combo contains the item name (for exact combos only)
+      if (lowerName.includes(combo) || (combo.includes(lowerName) && lowerName.length > 15)) {
+        return { isCombo: true, splits, isSpecial: splits.isSpecial };
+      }
+    }
+  }
+  
+  // Check Pranav's specific items
+  for (const item of PRANAV_ITEMS) {
+    if (lowerName.includes(item)) {
+      return { person: 'pranav', isCombo: false };
+    }
+  }
+  
+  // Check Kamal's keywords (Sandwiches, Burgers)
+  for (const keyword of KAMAL_KEYWORDS) {
+    if (lowerName.includes(keyword)) {
+      return { person: 'kamal', isCombo: false };
+    }
+  }
+  
+  // Check Vatsala's keywords (Fries, Spiral, Nachos)
+  for (const keyword of VATSALA_KEYWORDS) {
+    if (lowerName.includes(keyword)) {
+      return { person: 'vatsala', isCombo: false };
+    }
+  }
+  
+  // Check Harsh's keywords (Drinks)
+  for (const keyword of HARSH_KEYWORDS) {
+    if (lowerName.includes(keyword)) {
+      return { person: 'harsh', isCombo: false };
+    }
+  }
+  
+  // Default: not assigned to anyone
+  return { person: null, isCombo: false };
+}
+
+// ========================================
+// FETCH AND RENDER
+// ========================================
+
+function fetchOrders() {
+  fetch("/orders/history", {
+    headers: { Authorization: "Bearer " + token }
+  })
+  .then(res => res.json())
+  .then(rows => {
+    // Group by order
+    const orders = {};
+    rows.forEach(r => {
+      if (r.status !== "PENDING") return; // Only pending orders
+      
+      if (!orders[r.order_id]) {
+        orders[r.order_id] = {
+          id: r.order_id,
+          daily_no: r.daily_order_no,
+          remarks: r.remarks,
+          created_at: r.created_at,
+          items: []
+        };
+      }
+      
+      if (r.item_name) {
+        orders[r.order_id].items.push({
+          name: r.item_name,
+          qty: r.quantity
+        });
+      }
+    });
+    
+    // Sort by daily_order_no (priority)
+    const sortedOrders = Object.values(orders).sort((a, b) => 
+      (a.daily_no || a.id) - (b.daily_no || b.id)
+    );
+    
+    // Categorize items for each person
+    const pranavOrders = [];
+    const vatsalaOrders = [];
+    const harshOrders = [];
+    const kamalOrders = [];
+    
+    sortedOrders.forEach(order => {
+      const pranavItems = [];
+      const vatsalaItems = [];
+      const harshItems = [];
+      const kamalItems = [];
+      
+      order.items.forEach(item => {
+        const category = categorizeItem(item.name);
+        
+        if (category.isCombo) {
+          // Split combo items - add (Combo) or (Special Combo) indicator
+          const comboLabel = category.isSpecial ? ' (Special Combo)' : ' (Combo)';
+          const itemClass = category.isSpecial ? 'special' : 'combo';
+          
+          if (category.splits.pranav) {
+            pranavItems.push({ name: category.splits.pranav + comboLabel, qty: item.qty, originalName: item.name, isCombo: true, isSpecial: category.isSpecial });
+          }
+          if (category.splits.vatsala) {
+            vatsalaItems.push({ name: category.splits.vatsala + comboLabel, qty: item.qty, originalName: item.name, isCombo: true, isSpecial: category.isSpecial });
+          }
+          if (category.splits.harsh) {
+            harshItems.push({ name: category.splits.harsh + comboLabel, qty: item.qty, originalName: item.name, isCombo: true, isSpecial: category.isSpecial });
+          }
+          if (category.splits.kamal) {
+            kamalItems.push({ name: category.splits.kamal + comboLabel, qty: item.qty, originalName: item.name, isCombo: true, isSpecial: category.isSpecial });
+          }
+        } else if (category.person === 'pranav') {
+          pranavItems.push(item);
+        } else if (category.person === 'vatsala') {
+          vatsalaItems.push(item);
+        } else if (category.person === 'harsh') {
+          harshItems.push(item);
+        } else if (category.person === 'kamal') {
+          kamalItems.push(item);
+        }
+      });
+      
+      if (pranavItems.length > 0) {
+        pranavOrders.push({ ...order, items: pranavItems });
+      }
+      if (vatsalaItems.length > 0) {
+        vatsalaOrders.push({ ...order, items: vatsalaItems });
+      }
+      if (harshItems.length > 0) {
+        harshOrders.push({ ...order, items: harshItems });
+      }
+      if (kamalItems.length > 0) {
+        kamalOrders.push({ ...order, items: kamalItems });
+      }
+    });
+    
+    // Render
+    renderColumn('pranav', pranavOrders);
+    renderColumn('vatsala', vatsalaOrders);
+    renderColumn('harsh', harshOrders);
+    renderColumn('kamal', kamalOrders);
+    
+    // Update counts
+    document.getElementById('pranav-count').textContent = pranavOrders.length;
+    document.getElementById('vatsala-count').textContent = vatsalaOrders.length;
+    document.getElementById('harsh-count').textContent = harshOrders.length;
+    document.getElementById('kamal-count').textContent = kamalOrders.length;
+    
+    // Update time (IST)
+    document.getElementById('lastUpdate').textContent = 
+      'Updated: ' + new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
+  });
+}
+
+// Helper function to calculate waiting minutes correctly
+// Server returns ISO timestamps with 'Z' (UTC), so we can calculate directly
+function getWaitingMinutes(createdAt) {
+  // Both Date.now() and new Date(isoString) work in UTC milliseconds
+  const orderTimeMs = new Date(createdAt).getTime();
+  const nowMs = Date.now();
+  
+  const diffMs = nowMs - orderTimeMs;
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  
+  // If negative (shouldn't happen), return 0
+  return Math.max(0, diffMins);
+}
+
+function renderColumn(person, orders) {
+  const container = document.getElementById(`${person}-orders`);
+  
+  if (orders.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">✅</div>
+        <div>All caught up!</div>
+      </div>
+    `;
+    return;
+  }
+  
+  container.innerHTML = orders.map((order, index) => {
+    // Check if order is overdue (> 13 minutes old)
+    const waitingMinutes = getWaitingMinutes(order.created_at);
+    const isPriority = waitingMinutes > 13; // Only red if older than 13 minutes
+    
+    const orderTime = new Date(order.created_at).toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+    
+    return `
+      <div class="order-card ${isPriority ? 'priority-high' : ''}" data-order-id="${order.id}">
+        <div class="d-flex justify-content-between align-items-center">
+          <span class="order-number">#${order.daily_no || order.id}</span>
+          <span class="order-time">${isPriority ? '⚠️' : '🕐'} ${waitingMinutes} min</span>
+        </div>
+        
+        ${order.items.map(item => `
+          <div class="item-name d-flex justify-content-between align-items-center ${item.isSpecial ? 'special-combo-item' : (item.isCombo ? 'combo-item' : '')}">
+            <span>${item.name}${item.isSpecial ? '<span class="special-badge">⭐ SPECIAL</span>' : ''}</span>
+            <span class="item-qty">×${item.qty}</span>
+          </div>
+        `).join('')}
+        
+        ${order.remarks ? `<div class="remarks">📝 ${order.remarks}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+// Initial fetch
+fetchOrders();
+
+// Auto-refresh every 5 seconds (syncs with order.html deliveries)
+setInterval(fetchOrders, 5000);
+
+// Listen for storage events (cross-tab sync)
+window.addEventListener('storage', (e) => {
+  if (e.key === 'orderDelivered') {
+    fetchOrders();
+  }
+});
+
+</script>
+
+</body>
+</html>
+

@@ -4,6 +4,9 @@ const cors = require("cors");
 const path = require("path");
 const { Server } = require("socket.io");
 
+// Set default JWT secret for local testing
+process.env.JWT_SECRET = process.env.JWT_SECRET || "local_test_secret_key_12345";
+
 const pool = require("./db");
 const auth = require("./middleware/auth");
 const authRoutes = require("./routes/auth");
@@ -14,6 +17,36 @@ const io = new Server(server);
 
 app.use(cors());
 app.use(express.json());
+
+/* RESET ALL ORDERS - Must be BEFORE router middleware */
+app.delete("/orders/reset-all", auth, async (req, res) => {
+  const { password } = req.body;
+  
+  // Verify password
+  if (password !== "warning") {
+    return res.status(403).json({ success: false, message: "Invalid password" });
+  }
+  
+  // Only admins can reset
+  if (req.user.role !== "admin") {
+    return res.status(403).json({ success: false, message: "Only admins can reset orders" });
+  }
+  
+  try {
+    // Delete all order items first (foreign key constraint)
+    await pool.query("DELETE FROM order_items");
+    
+    // Delete all orders
+    await pool.query("DELETE FROM orders");
+    
+    console.log(`⚠️ All orders reset by user: ${req.user.name} (ID: ${req.user.userId})`);
+    
+    res.json({ success: true, message: "All orders deleted. Next order will be #1" });
+  } catch (err) {
+    console.error("Reset error:", err);
+    res.status(500).json({ success: false, message: "Failed to reset orders" });
+  }
+});
 
 app.use("/order", require("./routes/order"));
 app.use(express.static(path.join(__dirname, "../frontend")));
@@ -46,7 +79,7 @@ app.get("/menu", async (_, res) => {
 
 /* PLACE ORDER */
 app.post("/order", auth, async (req, res) => {
-  const { items } = req.body;
+  const { items, remarks } = req.body;
   let total = 0;
 console.log("user detais",req.user.userId);
   // 1️⃣ Calculate total
@@ -63,19 +96,28 @@ console.log("user detais",req.user.userId);
     total += p.rows[0].price * i.qty;
   }
 
-  // 2️⃣ Create order WITH created_by
+  // 2️⃣ Get daily order number (count of today's orders + 1)
+  const dailyCountResult = await pool.query(`
+    SELECT COUNT(*) + 1 AS daily_no
+    FROM orders
+    WHERE (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date
+          = (NOW() AT TIME ZONE 'Asia/Kolkata')::date
+  `);
+  const dailyOrderNo = dailyCountResult.rows[0].daily_no;
+
+  // 3️⃣ Create order WITH created_by, remarks, daily_order_no
   const order = await pool.query(
     `
-    INSERT INTO orders (total_amount, status, created_by, updated_by)
-    VALUES ($1, 'PENDING', $2, $2)
+    INSERT INTO orders (total_amount, status, created_by, updated_by, remarks, daily_order_no)
+    VALUES ($1, 'PENDING', $2, $2, $3, $4)
     RETURNING id
     `,
-    [total, req.user.userId]
+    [total, req.user.userId, remarks || null, dailyOrderNo]
   );
 
   const orderId = order.rows[0].id;
 
-  // 3️⃣ Insert order items
+  // 4️⃣ Insert order items
   for (let i of items) {
     await pool.query(
       `
@@ -86,10 +128,10 @@ console.log("user detais",req.user.userId);
     );
   }
 
-  // 4️⃣ Notify (Socket)
-  io.emit("new-order", { orderId });
+  // 5️⃣ Notify (Socket)
+  io.emit("new-order", { orderId, dailyOrderNo });
 
-  res.json({ orderId });
+  res.json({ orderId, dailyOrderNo });
 });
 
 
@@ -115,6 +157,81 @@ app.put("/order/:id/deliver", auth, async (req, res) => {
   res.json({ success: true });
 });
 
+/* UPDATE REMARKS */
+app.put("/order/:id/remarks", auth, async (req, res) => {
+  const { remarks } = req.body;
+
+  await pool.query(
+    `UPDATE orders SET remarks = $1, updated_by = $2 WHERE id = $3`,
+    [remarks || null, req.user.userId, req.params.id]
+  );
+
+  res.json({ message: "Remarks updated" });
+});
+
+/* TOP-UP ORDER */
+app.put("/order/:id/topup", auth, async (req, res) => {
+  const { amount } = req.body;
+
+  if (!amount || isNaN(amount) || amount <= 0) {
+    return res.status(400).json({ message: "Invalid top-up amount" });
+  }
+
+  const order = await pool.query(
+    "SELECT total_amount FROM orders WHERE id=$1",
+    [req.params.id]
+  );
+
+  if (!order.rowCount) {
+    return res.status(404).json({ message: "Order not found" });
+  }
+
+  const newTotal = Number(order.rows[0].total_amount) + Number(amount);
+
+  await pool.query(
+    `UPDATE orders SET total_amount = $1, updated_by = $2 WHERE id = $3`,
+    [newTotal, req.user.userId, req.params.id]
+  );
+
+  res.json({ message: "Top-up added", newTotal });
+});
+
+/* MARK AS PAID */
+app.put("/order/:id/pay", auth, async (req, res) => {
+  const { mode } = req.body;
+
+  if (!["CASH", "ONLINE"].includes(mode)) {
+    return res.status(400).json({ message: "Invalid payment mode" });
+  }
+
+  await pool.query(
+    `UPDATE orders SET payment_status = 'PAID', payment_mode = $1, updated_by = $2 WHERE id = $3`,
+    [mode, req.user.userId, req.params.id]
+  );
+
+  res.json({ message: "Payment marked as paid" });
+});
+
+/* SPLIT PAYMENT (CASH + ONLINE) */
+app.put("/order/:id/pay-split", auth, async (req, res) => {
+  const { cashAmount, onlineAmount } = req.body;
+
+  if (cashAmount === undefined || onlineAmount === undefined) {
+    return res.status(400).json({ message: "Cash and online amounts required" });
+  }
+
+  if (cashAmount < 0 || onlineAmount < 0) {
+    return res.status(400).json({ message: "Amounts cannot be negative" });
+  }
+
+  await pool.query(
+    `UPDATE orders SET payment_status = 'PAID', payment_mode = 'SPLIT', cash_amount = $1, online_amount = $2, updated_by = $3 WHERE id = $4`,
+    [cashAmount, onlineAmount, req.user.userId, req.params.id]
+  );
+
+  res.json({ message: "Split payment recorded" });
+});
+
 /* BILL – GET ORDER */
 app.get("/order/:id", auth, async (req, res) => {
   const r = await pool.query(`
@@ -137,7 +254,7 @@ app.put("/order/:id", auth, async (req, res) => {
   if (!["bill","admin"].includes(req.user.role))
     return res.sendStatus(403);
 
-  const { items } = req.body;
+  const { items, remarks } = req.body;
   await pool.query("DELETE FROM order_items WHERE order_id=$1", [req.params.id]);
 
   let total = 0;
@@ -155,8 +272,8 @@ app.put("/order/:id", auth, async (req, res) => {
   }
 
   await pool.query(
-    "UPDATE orders SET total_amount=$1 WHERE id=$2",
-    [total, req.params.id]
+    "UPDATE orders SET total_amount=$1, remarks=$2 WHERE id=$3",
+    [total, remarks || null, req.params.id]
   );
 
   res.json({ message: "Order updated", total });

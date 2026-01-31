@@ -52,8 +52,12 @@ function loadOrderForEdit() {
     headers: { Authorization: "Bearer " + token }
   })
     .then(r => r.json())
-    .then(items => {
+    .then(data => {
       cart = {};
+
+      // Handle both old format (array) and new format (object with items & remarks)
+      const items = Array.isArray(data) ? data : data.items;
+      const remarks = Array.isArray(data) ? null : data.remarks;
 
       items.forEach(i => {
         cart[i.item_id] = {
@@ -63,6 +67,11 @@ function loadOrderForEdit() {
           qty: i.quantity
         };
       });
+
+      // Load remarks into input
+      if (remarks) {
+        document.getElementById("remarks").value = remarks;
+      }
 
       renderMenu(menuData);
       renderCart();
@@ -163,13 +172,44 @@ function renderCart() {
 }
 
 /* =========================
-   SEARCH
+   SEARCH (exact matches first, then partial)
 ========================= */
 function searchMenu() {
-  const q = document.getElementById("search").value.toLowerCase();
+  const q = document.getElementById("search").value.toLowerCase().trim();
+  
+  if (!q) {
+    renderMenu(menuData);
+    return;
+  }
+
+  // Filter items that match
   const filtered = menuData.filter(i =>
     i.name.toLowerCase().includes(q)
   );
+
+  // Sort: exact start match first, then contains match
+  filtered.sort((a, b) => {
+    const aName = a.name.toLowerCase();
+    const bName = b.name.toLowerCase();
+    
+    const aStartsWith = aName.startsWith(q);
+    const bStartsWith = bName.startsWith(q);
+    
+    const aExact = aName === q;
+    const bExact = bName === q;
+    
+    // Exact match comes first
+    if (aExact && !bExact) return -1;
+    if (bExact && !aExact) return 1;
+    
+    // Starts with comes second
+    if (aStartsWith && !bStartsWith) return -1;
+    if (bStartsWith && !aStartsWith) return 1;
+    
+    // Then by name length (shorter = more relevant)
+    return aName.length - bName.length;
+  });
+
   renderMenu(filtered);
 }
 
@@ -182,11 +222,14 @@ function placeOrder() {
     return;
   }
 
+  const remarks = document.getElementById("remarks").value.trim();
+
   const payload = {
     items: Object.values(cart).map(i => ({
       id: i.id,
       qty: i.qty
-    }))
+    })),
+    remarks: remarks || null
   };
 
   const url = editOrderId ? `/order/${editOrderId}` : "/order";

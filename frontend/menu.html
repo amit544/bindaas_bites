@@ -96,9 +96,8 @@
       <strong id="userName">User</strong>
       <small class="text-muted">(<span id="userRole"></span>)</small>
     </div>
-     <a href="/order.html" class="btn btn-outline-primary btn-sm">
-  My Orders
-</a>
+     <a href="/order.html" class="btn btn-outline-primary btn-sm">My Orders</a>
+    <a href="/kitchen.html" class="btn btn-outline-success btn-sm">Kitchen</a>
 
     <button class="btn btn-outline-danger btn-sm" onclick="logout()">
       Logout
@@ -133,6 +132,15 @@
 
   <div id="cartItems" class="cart-items mb-1">
     <small>No items selected</small>
+  </div>
+
+  <!-- REMARKS INPUT -->
+  <div class="mb-2">
+    <input
+      id="remarks"
+      class="form-control form-control-sm"
+      placeholder="📝 Add remarks (e.g., less sugar, extra spicy)"
+    />
   </div>
 
   <div class="d-flex justify-content-between align-items-center">

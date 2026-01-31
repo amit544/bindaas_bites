@@ -5,6 +5,7 @@
   <title>Bindaas Bites – Order History</title>
 
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
   <style>
     body { background: #f4f6f9; }
@@ -17,6 +18,58 @@
     .order-card.pending { border-left: 5px solid #ffc107; background: #fff8e1; }
     .order-card.delivered { border-left: 5px solid #28a745; background: #e9f7ef; }
     .order-card.cancelled { border-left: 5px solid #dc3545; background: #fdecea; }
+    
+    /* Overdue orders (waiting > 13 minutes) */
+    .order-card.overdue { 
+      border-left: 5px solid #dc3545; 
+      background: #ffcccc; 
+      animation: pulse-red 1.5s infinite;
+    }
+    
+    @keyframes pulse-red {
+      0% { background: #ffcccc; }
+      50% { background: #ffaaaa; }
+      100% { background: #ffcccc; }
+    }
+    
+    .overdue-badge {
+      background: #dc3545;
+      color: white;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      margin-left: 8px;
+    }
+    
+    .item-row {
+      padding: 4px 0;
+      border-bottom: 1px dashed #ddd;
+    }
+    
+    .item-row:last-child {
+      border-bottom: none;
+    }
+    
+    .item-row.item-delivered {
+      opacity: 0.7;
+      text-decoration: line-through;
+    }
+    
+    .item-row.item-delivered .item-price {
+      color: #28a745;
+      font-weight: bold;
+    }
+    
+    .btn-deliver-item {
+      padding: 2px 8px;
+      font-size: 12px;
+      line-height: 1.2;
+    }
+    
+    .item-price {
+      font-weight: 500;
+      color: #28a745;
+    }
   </style>
 </head>
 
@@ -34,7 +87,17 @@
 </div>
 
 <div class="container my-4">
-  <h3 class="text-center mb-4">📦 Order History</h3>
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="m-0">📦 Order History</h3>
+    <div class="d-flex gap-2">
+      <button class="btn btn-outline-primary" onclick="downloadCSV()">
+        📥 Download Report
+      </button>
+      <button class="btn btn-outline-danger" onclick="resetAllOrders()">
+        🔄 Reset All
+      </button>
+    </div>
+  </div>
 
   <!-- SUMMARY -->
   <div id="summary" class="row g-3 mb-4"></div>
@@ -50,11 +113,16 @@ if (!token) location.href = "/login.html";
 document.getElementById("userName").innerText =
   localStorage.getItem("userName") || "User";
 
+// Store orders globally for CSV download
+let allOrdersData = [];
+
 fetch("/orders/history", {
   headers: { Authorization: "Bearer " + token }
 })
 .then(res => res.json())
 .then(rows => {
+  // Store raw data for CSV
+  allOrdersData = rows;
   const ordersDiv = document.getElementById("orders");
 
   if (!rows.length) {
@@ -85,19 +153,23 @@ fetch("/orders/history", {
 
         if (r.payment_status === "PAID") {
           if (r.payment_mode === "CASH") totalCash += amount;
-          if (r.payment_mode === "ONLINE") totalOnline += amount;
+          else if (r.payment_mode === "ONLINE") totalOnline += amount;
+          else if (r.payment_mode === "SPLIT") {
+            totalCash += Number(r.cash_amount || 0);
+            totalOnline += Number(r.online_amount || 0);
+          }
         }
       }
     }
   });
 
   document.getElementById("summary").innerHTML = `
-    <div class="col-md-4"><div class="card p-3"><h6>Total Sale</h6><h4>₹${totalSale}</h4></div></div>
-    <div class="col-md-4"><div class="card p-3"><h6>Cash Payment</h6><h4>₹${totalCash}</h4></div></div>
-    <div class="col-md-4"><div class="card p-3"><h6>Online Payment</h6><h4>₹${totalOnline}</h4></div></div>
-    <div class="col-md-4"><div class="card p-3"><h6>Delivered</h6><h4>${delivered}</h4></div></div>
-    <div class="col-md-4"><div class="card p-3"><h6>Pending</h6><h4>${pending}</h4></div></div>
-    <div class="col-md-4"><div class="card p-3"><h6>Cancelled</h6><h4>${cancelled}</h4></div></div>
+    <div class="col-md-4"><div class="card p-3"><h6>Total Sale</h6><h4>₹<span id="total-sale">${totalSale}</span></h4></div></div>
+    <div class="col-md-4"><div class="card p-3"><h6>Cash Payment</h6><h4>₹<span id="cash-total">${totalCash}</span></h4></div></div>
+    <div class="col-md-4"><div class="card p-3"><h6>Online Payment</h6><h4>₹<span id="online-total">${totalOnline}</span></h4></div></div>
+    <div class="col-md-4"><div class="card p-3"><h6>Delivered</h6><h4 id="delivered-count">${delivered}</h4></div></div>
+    <div class="col-md-4"><div class="card p-3"><h6>Pending</h6><h4 id="pending-count">${pending}</h4></div></div>
+    <div class="col-md-4"><div class="card p-3"><h6>Cancelled</h6><h4 id="cancelled-count">${cancelled}</h4></div></div>
   `;
 
   // =========================
@@ -109,76 +181,158 @@ fetch("/orders/history", {
     if (!orders[r.order_id]) {
       orders[r.order_id] = {
         id: r.order_id,
+        daily_no: r.daily_order_no,
         status: r.status,
         total: r.total_amount,
         payment_status: r.payment_status,
         payment_mode: r.payment_mode,
+        cash_amount: r.cash_amount,
+        online_amount: r.online_amount,
+        remarks: r.remarks,
         created_at: r.created_at,
         items: []
       };
     }
 
     if (r.item_name) {
-      orders[r.order_id].items.push(`${r.item_name} × ${r.quantity}`);
+      orders[r.order_id].items.push({
+        name: r.item_name,
+        qty: r.quantity,
+        price: r.price,
+        order_item_id: r.order_item_id,
+        is_delivered: r.item_delivered || false
+      });
     }
   });
 
   // =========================
-  // SORT: Pending → Delivered → Cancelled
+  // SORT: Incomplete orders at top, Completed (green) at bottom, Cancelled last
   // =========================
   const sortedOrders = Object.values(orders).sort((a, b) => {
-    const priority = { PENDING: 1, DELIVERED: 2, CANCELLED: 3 };
+    // Check if order is complete (both delivered AND paid)
+    const aComplete = a.status === "DELIVERED" && a.payment_status === "PAID";
+    const bComplete = b.status === "DELIVERED" && b.payment_status === "PAID";
+    const aCancelled = a.status === "CANCELLED";
+    const bCancelled = b.status === "CANCELLED";
+    
+    // Priority: Incomplete (1) → Completed (2) → Cancelled (3)
+    const getPriority = (complete, cancelled) => {
+      if (cancelled) return 3;
+      if (complete) return 2;
+      return 1; // Incomplete (pending, delivered but unpaid, paid but undelivered)
+    };
+    
+    const aPriority = getPriority(aComplete, aCancelled);
+    const bPriority = getPriority(bComplete, bCancelled);
 
-    if (priority[a.status] !== priority[b.status]) {
-      return priority[a.status] - priority[b.status];
+    if (aPriority !== bPriority) {
+      return aPriority - bPriority;
     }
 
-    return b.id - a.id;
+    return a.id - b.id; // Within same priority: oldest first, latest at bottom
   });
 
   // =========================
   // RENDER
   // =========================
   ordersDiv.innerHTML = sortedOrders.map(o => {
+    // Check if order is overdue (waiting > 13 minutes)
+    // Server returns ISO timestamps with 'Z' (UTC), so calculation is accurate
+    const orderTime = new Date(o.created_at).getTime();
+    const now = Date.now();
+    const waitingMinutes = Math.max(0, Math.floor((now - orderTime) / (1000 * 60)));
+    const isOverdue = o.status === "PENDING" && waitingMinutes > 13;
+    
+    // Check completion status
+    const isPaid = o.payment_status === "PAID";
+    const isDelivered = o.status === "DELIVERED";
+    const isComplete = isPaid && isDelivered; // Both paid AND delivered
+    const isCancelled = o.status === "CANCELLED";
+    
+    // Status message for incomplete orders
+    let statusMessage = "";
+    if (isDelivered && !isPaid) {
+      statusMessage = "⚠️ Payment pending";
+    } else if (isPaid && !isDelivered && o.status === "PENDING") {
+      statusMessage = "⚠️ Delivery pending";
+    }
+
     const statusClass =
-      o.status === "CANCELLED" ? "cancelled" :
-      o.status === "DELIVERED" ? "delivered" :
-      "pending";
+      isCancelled ? "cancelled" :
+      isComplete ? "delivered" :
+      isOverdue ? "overdue" : "pending";
 
     const badgeClass =
-      o.status === "CANCELLED" ? "bg-danger" :
-      o.status === "DELIVERED" ? "bg-success" :
-      "bg-warning";
+      isCancelled ? "bg-danger" :
+      isComplete ? "bg-success" :
+      isOverdue ? "bg-danger" : "bg-warning";
+    
+    const displayStatus = 
+      isCancelled ? "CANCELLED" :
+      isComplete ? "COMPLETED" :
+      isDelivered ? "DELIVERED" :
+      "PENDING";
 
     return `
-      <div class="card order-card ${statusClass} p-3 mb-3">
-        <div class="d-flex justify-content-between">
-          <h5>Order #${o.id}</h5>
-          <span class="badge ${badgeClass}">${o.status}</span>
+      <div class="card order-card ${statusClass} p-3 mb-3" data-order-id="${o.id}" data-total="${o.total}">
+        <div class="d-flex justify-content-between align-items-center">
+          <h5>Order #${o.daily_no || o.id} ${isOverdue ? `<span class="overdue-badge">⏰ ${waitingMinutes} min</span>` : ""}</h5>
+          <span class="badge ${badgeClass} status-badge">${displayStatus}</span>
         </div>
 
-        <small class="text-muted">📅 ${new Date(o.created_at).toLocaleString()}</small>
+        <small class="text-muted">📅 ${new Date(o.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}</small>
+        
+        ${statusMessage ? `<div class="status-message mt-1"><small class="text-danger fw-bold">${statusMessage}</small></div>` : ""}
         <hr>
 
-        ${o.items.map(i => `<div>🍽 ${i}</div>`).join("")}
+        ${o.items.map(i => {
+          const itemDelivered = i.is_delivered === true || i.is_delivered === 'true';
+          return `
+            <div class="item-row d-flex justify-content-between align-items-center mb-2 ${itemDelivered ? 'item-delivered' : ''}" data-item-id="${i.order_item_id}">
+              <div class="d-flex align-items-center gap-2">
+                <span>🍽 ${i.name} × ${i.qty}</span>
+                ${itemDelivered ? '<span class="badge bg-success">✓ Delivered</span>' : ''}
+              </div>
+              <div class="d-flex align-items-center gap-2">
+                <span class="item-price">₹${i.price * i.qty}</span>
+                ${!isDelivered && !isCancelled && !itemDelivered ? `
+                  <button class="btn btn-sm btn-outline-success btn-deliver-item" onclick="markItemDelivered(${o.id}, ${i.order_item_id})" title="Mark this item as delivered">
+                    ✓
+                  </button>
+                ` : ''}
+              </div>
+            </div>
+          `;
+        }).join("")}
+
+        <div class="remarks-container">
+        ${o.remarks ? `
+          <div class="mt-2 p-2 bg-light rounded d-flex justify-content-between align-items-center remarks-box">
+            <span><strong>📝 Remarks:</strong> <span class="remarks-text">${o.remarks}</span></span>
+            ${!isComplete && !isCancelled ? `<button class="btn btn-sm btn-outline-secondary" onclick="editRemarks(${o.id}, '${o.remarks.replace(/'/g, "\\'")}')">✏️</button>` : ""}
+          </div>
+        ` : `${!isComplete && !isCancelled ? `<div class="mt-2 add-remarks-btn"><button class="btn btn-sm btn-outline-secondary" onclick="editRemarks(${o.id}, '')">➕ Add Remarks</button></div>` : ""}`}
+        </div>
 
         <hr>
-        <h6>Total: ₹${o.total}</h6>
+        <h6 class="order-total">Total: ₹${o.total}</h6>
 
-        <p>💳 Payment: <strong>${o.payment_status || "UNPAID"}</strong> ${o.payment_mode ? `(${o.payment_mode})` : ""}</p>
+        <p class="payment-status">💳 Payment: <strong>${o.payment_status || "UNPAID"}</strong> ${o.payment_mode === 'SPLIT' ? `(SPLIT: ₹${o.cash_amount} Cash + ₹${o.online_amount} Online)` : (o.payment_mode ? `(${o.payment_mode})` : "")}</p>
 
-        ${o.status === "PENDING" ? `
-          <div class="d-flex gap-2 flex-wrap">
-            ${o.payment_status !== "PAID" ? `
-              <button class="btn btn-sm btn-success" onclick="markPaid(${o.id}, 'CASH')">💵 Cash</button>
-              <button class="btn btn-sm btn-info" onclick="markPaid(${o.id}, 'ONLINE')">💳 Online</button>
+        ${!isComplete && !isCancelled ? `
+          <div class="d-flex gap-2 flex-wrap action-buttons">
+            ${!isDelivered ? `<button class="btn btn-sm btn-dark btn-deliver" onclick="markDelivered(${o.id})">🚚 Deliver</button>` : ""}
+
+            ${!isPaid ? `
+              <button class="btn btn-sm btn-success btn-cash" onclick="markPaid(${o.id}, 'CASH')">💵 Cash</button>
+              <button class="btn btn-sm btn-info btn-online" onclick="markPaid(${o.id}, 'ONLINE')">💳 Online</button>
+              <button class="btn btn-sm btn-secondary btn-split" onclick="showSplitPayment(${o.id}, ${o.total})">💵💳 Split</button>
             ` : ""}
 
-            <button class="btn btn-sm btn-primary" onclick="editOrder(${o.id})">Edit</button>
-            <button class="btn btn-sm btn-danger" onclick="cancelOrder(${o.id})">Cancel</button>
-
-            ${o.payment_status === "PAID" ? `
-              <button class="btn btn-sm btn-dark" onclick="markDelivered(${o.id})">🚚 Deliver</button>
+            ${!isDelivered ? `
+              <button class="btn btn-sm btn-primary btn-edit" onclick="editOrder(${o.id})">Edit</button>
+              <button class="btn btn-sm btn-warning btn-topup" onclick="topUpOrder(${o.id})">➕ Top-up</button>
+              <button class="btn btn-sm btn-danger btn-cancel" onclick="cancelOrder(${o.id})">Cancel</button>
             ` : ""}
           </div>
         ` : ""}
@@ -200,7 +354,30 @@ function cancelOrder(id) {
   fetch(`/order/${id}`, {
     method: "DELETE",
     headers: { Authorization: "Bearer " + token }
-  }).then(() => location.reload());
+  }).then(res => {
+    if (res.ok) {
+      const card = document.querySelector(`[data-order-id="${id}"]`);
+      if (card) {
+        // Change card style to cancelled
+        card.classList.remove('pending', 'overdue');
+        card.classList.add('cancelled');
+        // Update badge
+        const badge = card.querySelector('.status-badge');
+        if (badge) {
+          badge.className = 'badge bg-danger status-badge';
+          badge.textContent = 'CANCELLED';
+        }
+        // Remove overdue badge if present
+        const overdueBadge = card.querySelector('.overdue-badge');
+        if (overdueBadge) overdueBadge.remove();
+        // Remove action buttons
+        const btnGroup = card.querySelector('.action-buttons');
+        if (btnGroup) btnGroup.remove();
+        // Update summary counts
+        updateSummary('cancelled');
+      }
+    }
+  });
 }
 
 function markPaid(id, mode) {
@@ -211,19 +388,792 @@ function markPaid(id, mode) {
       Authorization: "Bearer " + token
     },
     body: JSON.stringify({ mode })
-  }).then(() => location.reload());
+  }).then(res => {
+    if (res.ok) {
+      const card = document.querySelector(`[data-order-id="${id}"]`);
+      if (card) {
+        const orderTotal = parseInt(card.dataset.total) || 0;
+        
+        // Update payment status text
+        const paymentText = card.querySelector('.payment-status');
+        if (paymentText) {
+          paymentText.innerHTML = `💳 Payment: <strong>PAID</strong> (${mode})`;
+        }
+        
+        // Remove cash/online buttons
+        const cashBtn = card.querySelector('.btn-cash');
+        const onlineBtn = card.querySelector('.btn-online');
+        if (cashBtn) cashBtn.remove();
+        if (onlineBtn) onlineBtn.remove();
+        
+        // Check if already delivered (via data attribute or no deliver button)
+        const isDelivered = card.dataset.delivered === 'true' || !card.querySelector('.btn-deliver');
+        
+        if (isDelivered) {
+          // Both paid and delivered - mark as complete (GREEN)
+          card.classList.remove('pending', 'overdue');
+          card.classList.add('delivered');
+          const badge = card.querySelector('.status-badge');
+          if (badge) {
+            badge.className = 'badge bg-success status-badge';
+            badge.textContent = 'COMPLETED';
+          }
+          const statusMsg = card.querySelector('.status-message');
+          if (statusMsg) statusMsg.remove();
+          const btnGroup = card.querySelector('.action-buttons');
+          if (btnGroup) btnGroup.remove();
+          updateSummary('delivered');
+        } else {
+          // Paid but not delivered - show delivery pending message
+          let statusMsg = card.querySelector('.status-message');
+          if (!statusMsg) {
+            const timeEl = card.querySelector('small.text-muted');
+            statusMsg = document.createElement('div');
+            statusMsg.className = 'status-message mt-1';
+            timeEl.after(statusMsg);
+          }
+          statusMsg.innerHTML = '<small class="text-danger fw-bold">⚠️ Delivery pending</small>';
+        }
+        
+        // Update payment totals
+        if (mode === 'CASH') {
+          const cashEl = document.querySelector('#cash-total');
+          if (cashEl) cashEl.textContent = parseInt(cashEl.textContent) + orderTotal;
+        } else if (mode === 'ONLINE') {
+          const onlineEl = document.querySelector('#online-total');
+          if (onlineEl) onlineEl.textContent = parseInt(onlineEl.textContent) + orderTotal;
+        }
+      }
+    }
+  });
+}
+
+function markItemDelivered(orderId, itemId) {
+  fetch(`/order/${orderId}/item/${itemId}/deliver`, {
+    method: "PUT",
+    headers: { Authorization: "Bearer " + token }
+  }).then(res => res.json()).then(data => {
+    if (data.message) {
+      // Find the item row and update it
+      const itemRow = document.querySelector(`[data-item-id="${itemId}"]`);
+      if (itemRow) {
+        // Mark item as delivered visually
+        itemRow.classList.add('item-delivered');
+        
+        // Remove the deliver button
+        const deliverBtn = itemRow.querySelector('.btn-deliver-item');
+        if (deliverBtn) deliverBtn.remove();
+        
+        // Add delivered badge
+        const nameSpan = itemRow.querySelector('span');
+        if (nameSpan && !itemRow.querySelector('.badge')) {
+          const badge = document.createElement('span');
+          badge.className = 'badge bg-success';
+          badge.textContent = '✓ Delivered';
+          nameSpan.after(badge);
+        }
+      }
+      
+      // If all items are delivered, automatically mark order as delivered
+      if (data.allItemsDelivered && data.orderAutoDelivered) {
+        // Notify kitchen page (cross-tab sync)
+        localStorage.setItem('orderDelivered', Date.now());
+        
+        const card = document.querySelector(`[data-order-id="${orderId}"]`);
+        if (card) {
+          // Mark as delivered in data attribute
+          card.dataset.delivered = 'true';
+          
+          // Remove deliver button
+          const deliverBtn = card.querySelector('.btn-deliver');
+          if (deliverBtn) deliverBtn.remove();
+          
+          // Remove all item deliver buttons
+          const itemDeliverBtns = card.querySelectorAll('.btn-deliver-item');
+          itemDeliverBtns.forEach(btn => btn.remove());
+          
+          // Remove overdue badge
+          const overdueBadge = card.querySelector('.overdue-badge');
+          if (overdueBadge) overdueBadge.remove();
+          
+          // Check if already paid
+          const paymentText = card.querySelector('.payment-status')?.textContent || '';
+          const isPaid = paymentText.includes('PAID') && !paymentText.includes('UNPAID');
+          
+          if (isPaid) {
+            // Both delivered and paid - mark as complete (green)
+            card.classList.remove('pending', 'overdue');
+            card.classList.add('delivered');
+            const badge = card.querySelector('.status-badge');
+            if (badge) {
+              badge.className = 'badge bg-success status-badge';
+              badge.textContent = 'COMPLETED';
+            }
+            const statusMsg = card.querySelector('.status-message');
+            if (statusMsg) statusMsg.remove();
+            const btnGroup = card.querySelector('.action-buttons');
+            if (btnGroup) btnGroup.remove();
+            updateSummary('delivered');
+          } else {
+            // Delivered but not paid
+            card.classList.remove('overdue');
+            card.classList.add('pending');
+            const badge = card.querySelector('.status-badge');
+            if (badge) {
+              badge.className = 'badge bg-warning status-badge';
+              badge.textContent = 'DELIVERED';
+            }
+            let statusMsg = card.querySelector('.status-message');
+            if (!statusMsg) {
+              const timeEl = card.querySelector('small.text-muted');
+              statusMsg = document.createElement('div');
+              statusMsg.className = 'status-message mt-1';
+              timeEl.after(statusMsg);
+            }
+            statusMsg.innerHTML = '<small class="text-danger fw-bold">⚠️ Payment pending</small>';
+          }
+        }
+      }
+    }
+  }).catch(err => {
+    console.error('Error marking item as delivered:', err);
+    alert('Failed to mark item as delivered');
+  });
 }
 
 function markDelivered(id) {
   fetch(`/order/${id}/deliver`, {
     method: "PUT",
     headers: { Authorization: "Bearer " + token }
-  }).then(() => location.reload());
+  }).then(res => {
+    if (res.ok) {
+      // Notify kitchen page (cross-tab sync)
+      localStorage.setItem('orderDelivered', Date.now());
+      
+      const card = document.querySelector(`[data-order-id="${id}"]`);
+      if (card) {
+        // Mark as delivered in data attribute
+        card.dataset.delivered = 'true';
+        
+        // Mark all items as delivered visually
+        const itemRows = card.querySelectorAll('.item-row');
+        itemRows.forEach(row => {
+          row.classList.add('item-delivered');
+          const deliverBtn = row.querySelector('.btn-deliver-item');
+          if (deliverBtn) deliverBtn.remove();
+          if (!row.querySelector('.badge')) {
+            const nameSpan = row.querySelector('span');
+            if (nameSpan) {
+              const badge = document.createElement('span');
+              badge.className = 'badge bg-success';
+              badge.textContent = '✓ Delivered';
+              nameSpan.after(badge);
+            }
+          }
+        });
+        
+        // Remove deliver button only
+        const deliverBtn = card.querySelector('.btn-deliver');
+        if (deliverBtn) deliverBtn.remove();
+        
+        // Remove overdue badge
+        const overdueBadge = card.querySelector('.overdue-badge');
+        if (overdueBadge) overdueBadge.remove();
+        
+        // Check if already paid (must check for exact "PAID" not "UNPAID")
+        const paymentText = card.querySelector('.payment-status')?.textContent || '';
+        const isPaid = paymentText.includes('PAID') && !paymentText.includes('UNPAID');
+        
+        if (isPaid) {
+          // Both delivered and paid - mark as complete (green)
+          card.classList.remove('pending', 'overdue');
+          card.classList.add('delivered');
+          const badge = card.querySelector('.status-badge');
+          if (badge) {
+            badge.className = 'badge bg-success status-badge';
+            badge.textContent = 'COMPLETED';
+          }
+          const statusMsg = card.querySelector('.status-message');
+          if (statusMsg) statusMsg.remove();
+          const btnGroup = card.querySelector('.action-buttons');
+          if (btnGroup) btnGroup.remove();
+          updateSummary('delivered');
+        } else {
+          // Delivered but not paid - keep yellow, show payment pending
+          // KEEP CASH/ONLINE BUTTONS!
+          card.classList.remove('overdue');
+          card.classList.add('pending');
+          const badge = card.querySelector('.status-badge');
+          if (badge) {
+            badge.className = 'badge bg-warning status-badge';
+            badge.textContent = 'DELIVERED';
+          }
+          let statusMsg = card.querySelector('.status-message');
+          if (!statusMsg) {
+            const timeEl = card.querySelector('small.text-muted');
+            statusMsg = document.createElement('div');
+            statusMsg.className = 'status-message mt-1';
+            timeEl.after(statusMsg);
+          }
+          statusMsg.innerHTML = '<small class="text-danger fw-bold">⚠️ Payment pending</small>';
+          
+          // Remove edit/topup/cancel buttons ONLY, keep payment buttons
+          const editBtn = card.querySelector('.btn-edit');
+          const topupBtn = card.querySelector('.btn-topup');
+          const cancelBtn = card.querySelector('.btn-cancel');
+          if (editBtn) editBtn.remove();
+          if (topupBtn) topupBtn.remove();
+          if (cancelBtn) cancelBtn.remove();
+        }
+      }
+    }
+  });
+}
+
+function updateSummary(action) {
+  const pendingEl = document.querySelector('#pending-count');
+  const deliveredEl = document.querySelector('#delivered-count');
+  const cancelledEl = document.querySelector('#cancelled-count');
+  
+  if (action === 'delivered' && pendingEl && deliveredEl) {
+    pendingEl.textContent = parseInt(pendingEl.textContent) - 1;
+    deliveredEl.textContent = parseInt(deliveredEl.textContent) + 1;
+  } else if (action === 'cancelled' && pendingEl && cancelledEl) {
+    pendingEl.textContent = parseInt(pendingEl.textContent) - 1;
+    cancelledEl.textContent = parseInt(cancelledEl.textContent) + 1;
+  }
+}
+
+function topUpOrder(id) {
+  const amount = prompt("Enter top-up amount (₹):");
+  if (!amount || isNaN(amount) || Number(amount) <= 0) {
+    alert("Please enter a valid amount");
+    return;
+  }
+
+  fetch(`/order/${id}/topup`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + token
+    },
+    body: JSON.stringify({ amount: Number(amount) })
+  }).then(res => res.json())
+    .then(data => {
+      if (data.newTotal) {
+        const card = document.querySelector(`[data-order-id="${id}"]`);
+        if (card) {
+          // Update total display
+          const totalEl = card.querySelector('.order-total');
+          if (totalEl) {
+            totalEl.textContent = `Total: ₹${data.newTotal}`;
+          }
+          // Update summary total sale
+          const totalSaleEl = document.querySelector('#total-sale');
+          if (totalSaleEl) {
+            totalSaleEl.textContent = parseInt(totalSaleEl.textContent) + Number(amount);
+          }
+        }
+      }
+    });
+}
+
+function editRemarks(id, currentRemarks) {
+  const newRemarks = prompt("Edit remarks:", currentRemarks);
+  if (newRemarks === null) return; // Cancelled
+  
+  fetch(`/order/${id}/remarks`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + token
+    },
+    body: JSON.stringify({ remarks: newRemarks })
+  }).then(res => {
+    if (res.ok) {
+      const card = document.querySelector(`[data-order-id="${id}"]`);
+      if (card) {
+        const remarksContainer = card.querySelector('.remarks-container');
+        
+        if (newRemarks.trim()) {
+          // Add or update remarks
+          remarksContainer.innerHTML = `
+            <div class="mt-2 p-2 bg-light rounded d-flex justify-content-between align-items-center remarks-box">
+              <span><strong>📝 Remarks:</strong> <span class="remarks-text">${newRemarks}</span></span>
+              <button class="btn btn-sm btn-outline-secondary" onclick="editRemarks(${id}, '${newRemarks.replace(/'/g, "\\'")}')">✏️</button>
+            </div>
+          `;
+        } else {
+          // Remarks cleared - show "Add Remarks" button
+          remarksContainer.innerHTML = `
+            <div class="mt-2 add-remarks-btn">
+              <button class="btn btn-sm btn-outline-secondary" onclick="editRemarks(${id}, '')">➕ Add Remarks</button>
+            </div>
+          `;
+        }
+      }
+    }
+  });
+}
+
+function showSplitPayment(orderId, total) {
+  // Create modal HTML
+  const modalHtml = `
+    <div class="modal fade" id="splitPaymentModal" tabindex="-1">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">💵💳 Split Payment</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="alert alert-info mb-3">
+              <strong>Total Amount:</strong> ₹${total}
+            </div>
+            <div class="mb-3">
+              <label class="form-label">💵 Cash Amount</label>
+              <input type="number" class="form-control" id="splitCashAmount" value="0" min="0" max="${total}" 
+                oninput="updateSplitOnline(${total})">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">💳 Online Amount</label>
+              <input type="number" class="form-control" id="splitOnlineAmount" value="${total}" min="0" max="${total}"
+                oninput="updateSplitCash(${total})">
+            </div>
+            <div id="splitError" class="text-danger" style="display:none;">
+              ⚠️ Cash + Online must equal ₹${total}
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-primary" onclick="confirmSplitPayment(${orderId}, ${total})">✓ Confirm Split</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // Remove existing modal if any
+  const existingModal = document.getElementById('splitPaymentModal');
+  if (existingModal) existingModal.remove();
+  
+  // Add modal to body
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+  
+  // Show modal
+  const modal = new bootstrap.Modal(document.getElementById('splitPaymentModal'));
+  modal.show();
+}
+
+function updateSplitOnline(total) {
+  const cash = parseInt(document.getElementById('splitCashAmount').value) || 0;
+  document.getElementById('splitOnlineAmount').value = Math.max(0, total - cash);
+  validateSplitAmount(total);
+}
+
+function updateSplitCash(total) {
+  const online = parseInt(document.getElementById('splitOnlineAmount').value) || 0;
+  document.getElementById('splitCashAmount').value = Math.max(0, total - online);
+  validateSplitAmount(total);
+}
+
+function validateSplitAmount(total) {
+  const cash = parseInt(document.getElementById('splitCashAmount').value) || 0;
+  const online = parseInt(document.getElementById('splitOnlineAmount').value) || 0;
+  const errorEl = document.getElementById('splitError');
+  
+  if (cash + online !== total) {
+    errorEl.style.display = 'block';
+    return false;
+  } else {
+    errorEl.style.display = 'none';
+    return true;
+  }
+}
+
+function confirmSplitPayment(orderId, total) {
+  const cash = parseInt(document.getElementById('splitCashAmount').value) || 0;
+  const online = parseInt(document.getElementById('splitOnlineAmount').value) || 0;
+  
+  if (cash + online !== total) {
+    alert('Cash + Online amount must equal ₹' + total);
+    return;
+  }
+  
+  if (cash === 0 && online === 0) {
+    alert('Please enter valid amounts');
+    return;
+  }
+  
+  fetch(`/order/${orderId}/pay-split`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + token
+    },
+    body: JSON.stringify({ cashAmount: cash, onlineAmount: online })
+  }).then(res => {
+    if (res.ok) {
+      // Close modal
+      bootstrap.Modal.getInstance(document.getElementById('splitPaymentModal')).hide();
+      
+      const card = document.querySelector(`[data-order-id="${orderId}"]`);
+      if (card) {
+        // Update payment status text
+        const paymentText = card.querySelector('.payment-status');
+        if (paymentText) {
+          paymentText.innerHTML = `💳 Payment: <strong>PAID</strong> (SPLIT: ₹${cash} Cash + ₹${online} Online)`;
+        }
+        
+        // Remove cash/online/split buttons
+        const cashBtn = card.querySelector('.btn-cash');
+        const onlineBtn = card.querySelector('.btn-online');
+        const splitBtn = card.querySelector('.btn-split');
+        if (cashBtn) cashBtn.remove();
+        if (onlineBtn) onlineBtn.remove();
+        if (splitBtn) splitBtn.remove();
+        
+        // Check if already delivered
+        const isDelivered = card.dataset.delivered === 'true' || !card.querySelector('.btn-deliver');
+        
+        if (isDelivered) {
+          // Both paid and delivered - mark as complete (GREEN)
+          card.classList.remove('pending', 'overdue');
+          card.classList.add('delivered');
+          const badge = card.querySelector('.status-badge');
+          if (badge) {
+            badge.className = 'badge bg-success status-badge';
+            badge.textContent = 'COMPLETED';
+          }
+          const statusMsg = card.querySelector('.status-message');
+          if (statusMsg) statusMsg.remove();
+          const btnGroup = card.querySelector('.action-buttons');
+          if (btnGroup) btnGroup.remove();
+          updateSummary('delivered');
+        } else {
+          // Paid but not delivered - show delivery pending message
+          let statusMsg = card.querySelector('.status-message');
+          if (!statusMsg) {
+            const timeEl = card.querySelector('small.text-muted');
+            statusMsg = document.createElement('div');
+            statusMsg.className = 'status-message mt-1';
+            timeEl.after(statusMsg);
+          }
+          statusMsg.innerHTML = '<small class="text-danger fw-bold">⚠️ Delivery pending</small>';
+        }
+        
+        // Update payment totals
+        const cashEl = document.querySelector('#cash-total');
+        const onlineEl = document.querySelector('#online-total');
+        if (cashEl && cash > 0) cashEl.textContent = parseInt(cashEl.textContent) + cash;
+        if (onlineEl && online > 0) onlineEl.textContent = parseInt(onlineEl.textContent) + online;
+      }
+    }
+  });
+}
+
+function resetAllOrders() {
+  const password = prompt("⚠️ WARNING: This will DELETE ALL ORDERS and reset to Order #1!\n\nEnter password to confirm:");
+  
+  if (password === null) return; // Cancelled
+  
+  if (password !== "warning") {
+    alert("❌ Incorrect password. Reset cancelled.");
+    return;
+  }
+  
+  // Double confirmation
+  if (!confirm("⚠️ FINAL WARNING!\n\nAre you absolutely sure you want to delete ALL orders?\n\nThis action CANNOT be undone!")) {
+    return;
+  }
+  
+  fetch("/orders/reset-all", {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + token
+    },
+    body: JSON.stringify({ password: password })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      alert("✅ All orders have been deleted.\n\nNext order will be Order #1");
+      location.reload();
+    } else {
+      alert("❌ " + (data.message || "Reset failed"));
+    }
+  })
+  .catch(err => {
+    alert("❌ Error: " + err.message);
+  });
 }
 
 function logout() {
   localStorage.clear();
   location.href = "/login.html";
+}
+
+function downloadCSV() {
+  if (allOrdersData.length === 0) {
+    alert("No orders to download");
+    return;
+  }
+
+  // Group orders for CSV
+  const ordersMap = {};
+  allOrdersData.forEach(r => {
+    if (!ordersMap[r.order_id]) {
+      ordersMap[r.order_id] = {
+        order_no: r.daily_order_no || r.order_id,
+        order_id: r.order_id,
+        status: r.status,
+        total_amount: r.total_amount,
+        payment_status: r.payment_status || 'UNPAID',
+        payment_mode: r.payment_mode || '-',
+        cash_amount: r.cash_amount || 0,
+        online_amount: r.online_amount || 0,
+        remarks: r.remarks || '',
+        created_at: r.created_at,
+        items: []
+      };
+    }
+    if (r.item_name) {
+      ordersMap[r.order_id].items.push({ name: r.item_name, qty: r.quantity, price: r.price });
+    }
+  });
+
+  // Sort orders by order number
+  const sortedOrders = Object.values(ordersMap).sort((a, b) => (a.order_no || a.order_id) - (b.order_no || b.order_id));
+
+  // Calculate summary
+  let totalSale = 0, totalCash = 0, totalOnline = 0;
+  let completed = 0, pending = 0, cancelled = 0;
+
+  sortedOrders.forEach(o => {
+    if (o.status === 'CANCELLED') {
+      cancelled++;
+    } else {
+      totalSale += Number(o.total_amount);
+      if (o.status === 'DELIVERED' && o.payment_status === 'PAID') {
+        completed++;
+      } else {
+        pending++;
+      }
+      if (o.payment_status === 'PAID') {
+        if (o.payment_mode === 'CASH') totalCash += Number(o.total_amount);
+        else if (o.payment_mode === 'ONLINE') totalOnline += Number(o.total_amount);
+        else if (o.payment_mode === 'SPLIT') {
+          totalCash += Number(o.cash_amount || 0);
+          totalOnline += Number(o.online_amount || 0);
+        }
+      }
+    }
+  });
+
+  // Build formatted text report
+  let report = '';
+  const line = '═'.repeat(80);
+  const thinLine = '─'.repeat(80);
+  
+  // Header
+  const today = new Date().toLocaleDateString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric'
+  });
+  const generatedTime = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+  
+  report += line + '\n';
+  report += '                    BINDAAS BITES - DAILY SALES REPORT\n';
+  report += line + '\n';
+  report += `  Date      : ${today}\n`;
+  report += `  Generated : ${generatedTime}\n`;
+  report += line + '\n\n';
+  
+  // Summary Section
+  report += '  📊 SUMMARY\n';
+  report += thinLine + '\n';
+  report += `  Total Orders      : ${sortedOrders.length}\n`;
+  report += `  ✅ Completed      : ${completed}\n`;
+  report += `  ⏳ Pending        : ${pending}\n`;
+  report += `  ❌ Cancelled      : ${cancelled}\n`;
+  report += thinLine + '\n';
+  report += `  💰 Total Sale     : ₹ ${totalSale.toLocaleString()}\n`;
+  report += `  💵 Cash Received  : ₹ ${totalCash.toLocaleString()}\n`;
+  report += `  💳 Online Received: ₹ ${totalOnline.toLocaleString()}\n`;
+  report += `  ⚠️  Pending Amount : ₹ ${(totalSale - totalCash - totalOnline).toLocaleString()}\n`;
+  report += line + '\n\n';
+  
+  // Orders Detail
+  report += '  📋 ORDER DETAILS\n';
+  report += line + '\n\n';
+  
+  sortedOrders.forEach((o, idx) => {
+    const time = new Date(o.created_at).toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+    
+    let finalStatus = o.status;
+    if (o.status === 'DELIVERED' && o.payment_status === 'PAID') {
+      finalStatus = '✅ COMPLETED';
+    } else if (o.status === 'CANCELLED') {
+      finalStatus = '❌ CANCELLED';
+    } else {
+      finalStatus = '⏳ PENDING';
+    }
+    
+    report += `  ┌${'─'.repeat(76)}┐\n`;
+    report += `  │  ORDER #${String(o.order_no || o.order_id).padEnd(10)} ${finalStatus.padEnd(20)} Time: ${time.padEnd(15)} │\n`;
+    report += `  ├${'─'.repeat(76)}┤\n`;
+    
+    // Items
+    report += `  │  ITEMS:${' '.repeat(68)}│\n`;
+    o.items.forEach(item => {
+      const itemLine = `     • ${item.name} × ${item.qty}`;
+      report += `  │${itemLine.padEnd(76)}│\n`;
+    });
+    
+    report += `  ├${'─'.repeat(76)}┤\n`;
+    report += `  │  Total: ₹ ${String(o.total_amount).padEnd(15)} Payment: ${o.payment_status.padEnd(10)} Mode: ${(o.payment_mode || '-').padEnd(10)}│\n`;
+    
+    if (o.remarks) {
+      report += `  │  Remarks: ${o.remarks.substring(0, 60).padEnd(64)}│\n`;
+    }
+    
+    report += `  └${'─'.repeat(76)}┘\n\n`;
+  });
+  
+  // Category-wise Summary
+  const categories = {
+    'Fries & Spirals': { keywords: ['fries', 'spiral'], count: 0, revenue: 0 },
+    'Drinks (Cold)': { keywords: ['cold coffee', 'mojito', 'shake', 'milkshake', 'coldrink'], count: 0, revenue: 0 },
+    'Drinks (Hot)': { keywords: ['hot coffee', 'hot chocolate', 'masala chai'], count: 0, revenue: 0 },
+    'Combos': { keywords: ['combo', '+'], count: 0, revenue: 0 },
+    'Brownies & Desserts': { keywords: ['brownie', 'chocolate pot', 'strawberry'], count: 0, revenue: 0 },
+    'Sandwiches': { keywords: ['sandwich'], count: 0, revenue: 0 },
+    'Burgers': { keywords: ['burger'], count: 0, revenue: 0 },
+    'Nachos': { keywords: ['nachos'], count: 0, revenue: 0 },
+    'Others': { keywords: [], count: 0, revenue: 0 }
+  };
+
+  // Count items by category
+  sortedOrders.forEach(o => {
+    if (o.status === 'CANCELLED') return;
+    
+    o.items.forEach(item => {
+      const lowerName = item.name.toLowerCase();
+      let categorized = false;
+      
+      // Check combos first (items with +)
+      if (lowerName.includes('+') || lowerName.includes('combo')) {
+        categories['Combos'].count += item.qty;
+        categories['Combos'].revenue += (item.price || 0) * item.qty;
+        categorized = true;
+      } else {
+        // Check other categories
+        for (const [catName, catData] of Object.entries(categories)) {
+          if (catName === 'Combos' || catName === 'Others') continue;
+          
+          for (const keyword of catData.keywords) {
+            if (lowerName.includes(keyword)) {
+              catData.count += item.qty;
+              catData.revenue += (item.price || 0) * item.qty;
+              categorized = true;
+              break;
+            }
+          }
+          if (categorized) break;
+        }
+      }
+      
+      if (!categorized) {
+        categories['Others'].count += item.qty;
+        categories['Others'].revenue += (item.price || 0) * item.qty;
+      }
+    });
+  });
+
+  report += '\n';
+  report += line + '\n';
+  report += '  📈 CATEGORY-WISE SALES SUMMARY\n';
+  report += line + '\n\n';
+  
+  report += `  ${'Category'.padEnd(25)} ${'Qty Sold'.padStart(12)} ${'Revenue'.padStart(15)}\n`;
+  report += `  ${'─'.repeat(25)} ${'─'.repeat(12)} ${'─'.repeat(15)}\n`;
+  
+  let totalQty = 0;
+  let totalRevenue = 0;
+  
+  for (const [catName, catData] of Object.entries(categories)) {
+    if (catData.count > 0) {
+      report += `  ${catName.padEnd(25)} ${String(catData.count).padStart(12)} ${('₹ ' + catData.revenue.toLocaleString()).padStart(15)}\n`;
+      totalQty += catData.count;
+      totalRevenue += catData.revenue;
+    }
+  }
+  
+  report += `  ${'─'.repeat(25)} ${'─'.repeat(12)} ${'─'.repeat(15)}\n`;
+  report += `  ${'TOTAL'.padEnd(25)} ${String(totalQty).padStart(12)} ${('₹ ' + totalRevenue.toLocaleString()).padStart(15)}\n`;
+  report += '\n';
+
+  // Top Selling Items
+  const itemSales = {};
+  sortedOrders.forEach(o => {
+    if (o.status === 'CANCELLED') return;
+    o.items.forEach(item => {
+      if (!itemSales[item.name]) {
+        itemSales[item.name] = { qty: 0, revenue: 0 };
+      }
+      itemSales[item.name].qty += item.qty;
+      itemSales[item.name].revenue += (item.price || 0) * item.qty;
+    });
+  });
+
+  const topItems = Object.entries(itemSales)
+    .sort((a, b) => b[1].qty - a[1].qty)
+    .slice(0, 10);
+
+  if (topItems.length > 0) {
+    report += '\n';
+    report += line + '\n';
+    report += '  🏆 TOP SELLING ITEMS\n';
+    report += line + '\n\n';
+    
+    report += `  ${'#'.padStart(3)} ${'Item Name'.padEnd(40)} ${'Qty'.padStart(8)} ${'Revenue'.padStart(12)}\n`;
+    report += `  ${'─'.repeat(3)} ${'─'.repeat(40)} ${'─'.repeat(8)} ${'─'.repeat(12)}\n`;
+    
+    topItems.forEach(([name, data], idx) => {
+      const shortName = name.length > 38 ? name.substring(0, 35) + '...' : name;
+      report += `  ${String(idx + 1).padStart(3)} ${shortName.padEnd(40)} ${String(data.qty).padStart(8)} ${('₹ ' + data.revenue.toLocaleString()).padStart(12)}\n`;
+    });
+    
+    report += '\n';
+  }
+
+  // Footer
+  report += line + '\n';
+  report += '                         *** END OF REPORT ***\n';
+  report += line + '\n';
+
+  // Download as text file
+  const blob = new Blob([report], { type: 'text/plain;charset=utf-8;' });
+  const link = document.createElement('a');
+  const fileName = `BindaasBites_Report_${new Date().toISOString().split('T')[0]}.txt`;
+  
+  link.href = URL.createObjectURL(blob);
+  link.download = fileName;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  alert(`✅ Downloaded: ${fileName}`);
 }
 </script>
 
